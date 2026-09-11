@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompNfse xmlns="http://www.abrasf.org.br/nfse.xsd">
+ <Nfse versao="2.02"><InfNfse Id="nfse250">
+  <Numero>250</Numero><CodigoVerificacao>A1B2-C3D4</CodigoVerificacao><DataEmissao>2026-08-12T16:20:00</DataEmissao>
+  <ValoresNfse><BaseCalculo>4200.00</BaseCalculo><Aliquota>5.00</Aliquota><ValorIss>210.00</ValorIss><ValorLiquidoNfse>4200.00</ValorLiquidoNfse></ValoresNfse>
+  <PrestadorServico><IdentificacaoPrestador><CpfCnpj><Cnpj>11444777000161</Cnpj></CpfCnpj><InscricaoMunicipal>777</InscricaoMunicipal></IdentificacaoPrestador>
+   <RazaoSocial>MOVEIS EXEMPLO LTDA</RazaoSocial><Endereco><Endereco>Av. B</Endereco><Numero>5</Numero><Bairro>Centro</Bairro><CodigoMunicipio>2800308</CodigoMunicipio><Uf>SE</Uf></Endereco></PrestadorServico>
+  <OrgaoGerador><CodigoMunicipio>2800308</CodigoMunicipio><Uf>SE</Uf></OrgaoGerador>
+  <DeclaracaoPrestacaoServico><InfDeclaracaoPrestacaoServico Id="dps250"><Competencia>2026-08-12</Competencia>
+   <Servico><Valores><ValorServicos>4200.00</ValorServicos><ValorDeducoes>0.00</ValorDeducoes><ValorIss>210.00</ValorIss><Aliquota>5.00</Aliquota></Valores>
+    <IssRetido>2</IssRetido><ItemListaServico>17.19</ItemListaServico><Discriminacao>Servicos de intermediacao</Discriminacao><CodigoMunicipio>2800308</CodigoMunicipio></Servico>
+   <Prestador><CpfCnpj><Cnpj>11444777000161</Cnpj></CpfCnpj></Prestador>
+   <Tomador><IdentificacaoTomador><CpfCnpj><Cnpj>12345678000195</Cnpj></CpfCnpj></IdentificacaoTomador><RazaoSocial>TOTALI CONTABILIDADE LTDA</RazaoSocial></Tomador>
+  </InfDeclaracaoPrestacaoServico></DeclaracaoPrestacaoServico>
+ </InfNfse></Nfse>
+</CompNfse>

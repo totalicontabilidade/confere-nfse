@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompNfse xmlns="http://www.abrasf.org.br/nfse.xsd">
+ <Nfse versao="2.02"><InfNfse Id="nfse251">
+  <Numero>251</Numero><CodigoVerificacao>E5F6-G7H8</CodigoVerificacao><DataEmissao>2026-08-15T10:00:00</DataEmissao>
+  <ValoresNfse><BaseCalculo>300.00</BaseCalculo><Aliquota>5.00</Aliquota><ValorIss>15.00</ValorIss><ValorLiquidoNfse>300.00</ValorLiquidoNfse></ValoresNfse>
+  <PrestadorServico><IdentificacaoPrestador><CpfCnpj><Cnpj>11444777000161</Cnpj></CpfCnpj><InscricaoMunicipal>777</InscricaoMunicipal></IdentificacaoPrestador>
+   <RazaoSocial>MOVEIS EXEMPLO LTDA</RazaoSocial><Endereco><Endereco>Av. B</Endereco><Numero>5</Numero><Bairro>Centro</Bairro><CodigoMunicipio>2800308</CodigoMunicipio><Uf>SE</Uf></Endereco></PrestadorServico>
+  <OrgaoGerador><CodigoMunicipio>2800308</CodigoMunicipio><Uf>SE</Uf></OrgaoGerador>
+  <DeclaracaoPrestacaoServico><InfDeclaracaoPrestacaoServico Id="dps251"><Competencia>2026-08-15</Competencia>
+   <Servico><Valores><ValorServicos>300.00</ValorServicos><ValorDeducoes>0.00</ValorDeducoes><ValorIss>15.00</ValorIss><Aliquota>5.00</Aliquota></Valores>
+    <IssRetido>2</IssRetido><ItemListaServico>17.19</ItemListaServico><Discriminacao>Servico cancelado</Discriminacao><CodigoMunicipio>2800308</CodigoMunicipio></Servico>
+   <Prestador><CpfCnpj><Cnpj>11444777000161</Cnpj></CpfCnpj></Prestador>
+   <Tomador><IdentificacaoTomador><CpfCnpj><Cnpj>98765432000198</Cnpj></CpfCnpj></IdentificacaoTomador><RazaoSocial>PADARIA DO CENTRO LTDA</RazaoSocial></Tomador>
+  </InfDeclaracaoPrestacaoServico></DeclaracaoPrestacaoServico>
+ </InfNfse></Nfse><NfseCancelamento><Confirmacao><Pedido><InfPedidoCancelamento><IdentificacaoNfse><Numero>251</Numero></IdentificacaoNfse><CodigoCancelamento>1</CodigoCancelamento></InfPedidoCancelamento></Pedido><DataHora>2026-08-20T09:00:00</DataHora></Confirmacao></NfseCancelamento>
+</CompNfse>

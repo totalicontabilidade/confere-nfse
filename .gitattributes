@@ -1,0 +1,13 @@
+# Texto normalizado; binario nunca (senao o Git estraga PDF e planilha na troca de maquina)
+* text=auto eol=lf
+
+*.pdf   binary
+*.zip   binary
+*.xlsm  binary
+*.png   binary
+*.ico   binary
+*.b64   -text
+
+# .bat e .vbs so rodam no Windows: precisam de CRLF
+*.bat   text eol=crlf
+*.vbs   text eol=crlf

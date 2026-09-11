@@ -1,0 +1,35 @@
+# Nada aqui vai para o repositório: são dados de cliente e credenciais.
+# Atenção: no .gitignore, comentário só vale em linha própria.
+
+# PDFs fiscais enviados e o texto lido deles
+cache/
+
+# conferência em andamento (notas de clientes)
+sessao.json
+
+# certificado digital escolhido e ponto da consulta ao portal
+portal.json
+
+# modelos ensinados: podem trazer CNPJ de fornecedores
+modelos.json
+
+# certificados, em qualquer formato
+*.pfx
+*.p12
+*.key
+*.pem
+
+# arquivos reais de trabalho que por acaso caiam na pasta
+*-teste.pdf
+testes/fev*.pdf
+testes/01-*.pdf
+testes/02-*.pdf
+
+# lixo do sistema
+__pycache__/
+*.pyc
+*.bak
+*.tmp
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">
+ <infNFSe Id="NFS28030051234567800019500000000000101000000000123451">
+  <xLocEmi>Itabaiana</xLocEmi><xLocPrestacao>Itabaiana</xLocPrestacao>
+  <nNFSe>101</nNFSe>
+  <cLocIncid>2803005</cLocIncid><xLocIncid>Itabaiana</xLocIncid>
+  <xTribNac>Servicos de contabilidade</xTribNac>
+  <verAplic>1.0</verAplic><ambGer>1</ambGer><tpEmis>1</tpEmis><procEmi>1</procEmi><cStat>100</cStat>
+  <dhProc>2026-08-03T09:15:00-03:00</dhProc><nDFSe>1</nDFSe>
+  <emit><CNPJ>12345678000195</CNPJ><IM>12345</IM><xNome>TOTALI CONTABILIDADE LTDA</xNome>
+   <enderNac><xLgr>Rua A</xLgr><nro>10</nro><xBairro>Centro</xBairro><cMun>2803005</cMun><UF>SE</UF><CEP>49500000</CEP></enderNac>
+  </emit>
+  <valores><vBC>1500.00</vBC><pAliqAplic>5.00</pAliqAplic><vISSQN>75.00</vISSQN><vTotalRet>0.00</vTotalRet><vLiq>1500.00</vLiq></valores>
+  <DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00"><infDPS Id="DPS28030051234567800019">
+   <tpAmb>1</tpAmb><dhEmi>2026-08-03T09:15:00-03:00</dhEmi><verAplic>1.0</verAplic><serie>00001</serie><nDPS>101</nDPS><dCompet>2026-08-03</dCompet><tpEmit>1</tpEmit><cLocEmi>2803005</cLocEmi>
+   <prest><CNPJ>12345678000195</CNPJ></prest>
+   <toma><CNPJ>98765432000198</CNPJ><xNome>PADARIA DO CENTRO LTDA</xNome></toma>
+   <serv><locPrest><cLocPrestacao>2803005</cLocPrestacao></locPrest><cServ><cTribNac>171901</cTribNac><xDescServ>Honorarios contabeis agosto/2026</xDescServ></cServ></serv>
+   <valores><vServPrest><vServ>1500.00</vServ></vServPrest><trib><tribMun><tribISSQN>1</tribISSQN><tpRetISSQN>1</tpRetISSQN></tribMun></trib></valores>
+  </infDPS></DPS>
+ </infNFSe>
+</NFSe>
