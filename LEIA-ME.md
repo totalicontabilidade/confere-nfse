@@ -27,6 +27,16 @@ Os PDFs não precisam ser enviados de novo: o servidor guarda a leitura de cada 
 
 Também ficam guardados entre um uso e outro: o CNPJ e o papel da empresa, os acumuladores e CFOPs do Domínio, os modelos ensinados, o certificado escolhido para o Portal Nacional e o último NSU lido.
 
+Há duas cópias do trabalho: uma no servidor (`sessao.json`) e outra dentro do próprio navegador. Se o servidor estiver fora do ar, a do navegador segura o que der. Ao voltar, o sistema **pergunta** antes de retomar, mostrando de quando é e o que tem dentro — e só apaga se você escolher começar do zero.
+
+## Histórico de usos
+
+Cada trabalho concluído deixa um registro no Firebase da Totali: data, empresa, competência, quantos XMLs, quantos documentos no PDF e de que tipo, quantos conferiram, quantos divergiram, quantos ficaram pendentes e quantos foram importados.
+
+**Vai só isso.** Nenhum PDF, nenhum XML, nenhum número de nota, nenhum valor e nenhum nome de fornecedor saem da máquina. O registro serve para saber quanto o sistema foi usado e onde ele mais erra.
+
+O que liga esse histórico é o arquivo `firebase-config.js`, na pasta do sistema. Sem ele, tudo funciona igual — só não grava o histórico.
+
 ## A tela
 
 - **Topo:** as duas áreas para soltar os arquivos. Depois de carregados, viram uma linha com a contagem (passe o mouse para ver os nomes dos arquivos).
@@ -129,6 +139,7 @@ Para instalar em outra máquina: `python -m pip install -r requisitos.txt`.
 - `modelos-dominio/` — modelo oficial do Domínio (.xlsm) usado na exportação.
 - `portal_nacional.py` — consulta ao ADN com o certificado digital.
 - `portal.json` — certificado e senha (criado quando você configura; não compartilhe).
+- `firebase-config.js` — endereço do banco do histórico de usos (fica só nesta máquina).
 
 ## Segurança
 
@@ -137,3 +148,4 @@ Para instalar em outra máquina: `python -m pip install -r requisitos.txt`.
 - Recusa pedidos vindos de outros sites abertos no navegador (proteção contra CSRF).
 - Confere se o arquivo enviado é mesmo um PDF e limita o envio a 300 MB.
 - O certificado digital nunca sai da máquina; a senha fica só em `portal.json`.
+- Para o histórico de usos vai apenas o resumo. As regras do banco recusam qualquer campo além dos combinados, e ninguém consegue alterar ou apagar um registro já gravado.

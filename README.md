@@ -54,9 +54,27 @@ Além do certificado, a empresa precisa estar credenciada no Portal Nacional (go
 
 Só existem ali as notas do padrão nacional: municípios com sistema próprio não aparecem.
 
+## Histórico de usos (opcional)
+
+Se existir um `firebase-config.js` na pasta (copie o `firebase-config.exemplo.js` e preencha com o seu projeto), cada trabalho concluído grava um registro no Firestore: data, empresa, competência, quantidades por tipo de documento e quantos conferiram, divergiram, ficaram pendentes ou foram importados.
+
+Só isso. Nenhum PDF, XML, número de nota, valor ou nome de fornecedor sai da máquina.
+
+As regras do banco fecham o resto: entra apenas quem está autenticado, só com os campos combinados, só criando — registro gravado não se altera nem se apaga.
+
+```
+match /usos/{id} {
+  allow read:   if request.auth != null;
+  allow create: if request.auth != null && <os campos combinados, nos tipos certos>;
+  allow update, delete: if false;
+}
+```
+
+Sem o arquivo de configuração o sistema funciona igual; só não grava o histórico.
+
 ## Privacidade
 
-Nada sai do computador, fora a consulta ao Portal Nacional. Os PDFs, os XMLs, o texto lido e a conferência em andamento ficam na pasta do sistema e não vão para este repositório.
+Nada sai do computador, fora a consulta ao Portal Nacional e o resumo de uso acima. Os PDFs, os XMLs, o texto lido e a conferência em andamento ficam na pasta do sistema e não vão para este repositório.
 
 ## Arquivos
 
@@ -67,6 +85,7 @@ Nada sai do computador, fora a consulta ao Portal Nacional. Os PDFs, os XMLs, o 
 | `portal_nacional.py` | Consulta ao Ambiente de Dados Nacional |
 | `modelos-dominio/` | Modelo oficial do Domínio usado na exportação |
 | `testes/` | Notas fictícias para testar sem dado de cliente |
+| `firebase-config.exemplo.js` | Modelo do arquivo que liga o histórico de usos |
 | `LEIA-ME.md` | Manual de uso, em português, para quem vai operar |
 
 ---

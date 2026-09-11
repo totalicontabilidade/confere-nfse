@@ -33,3 +33,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# configuracao do Firebase desta instalacao
+firebase-config.js

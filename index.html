@@ -1598,6 +1598,7 @@ async function receberArquivos(files, lado) {
   else if (lado === 'xml' && !nx && np) aviso('Você soltou PDFs na área de XML. Tudo bem: eles foram tratados como PDF.');
   else if (lado === 'pdf' && !np && nx) aviso('Você soltou XMLs na área de PDF. Tudo bem: eles foram tratados como XML.');
   renderListas(); recalcular();
+  agendarRegistroUso();
 }
 async function lerPdf(buf, nome) {
   // Com o servidor disponível, ele resolve tudo: usa o texto do PDF quando existe e só
@@ -1945,6 +1946,106 @@ function aviso(msg) { const t = $('#toast'); t.textContent = msg; t.classList.ad
 /* ============================================================
    Sessão de trabalho: o que já foi carregado e decidido volta ao reabrir
    ============================================================ */
+// ---- histórico de uso na nuvem (Firebase)
+// Sobe só o retrato do trabalho: data, empresa, competência e quantidades.
+// Nenhum PDF, nenhum XML e nenhum dado de nota saem daqui.
+const VERSAO_APP = '1.0';
+const nuvem = { estado: 'desligada', db: null, motivo: '' };
+let ligandoNuvem = null;
+
+function carregarScript(src) {
+  return new Promise((ok, falha) => {
+    if (document.querySelector(`script[data-src="${src}"]`)) return ok();
+    const s = document.createElement('script');
+    s.src = src; s.dataset.src = src;
+    s.onload = () => ok();
+    s.onerror = () => falha(new Error('não carregou ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+function ligarNuvem() {
+  if (nuvem.estado === 'ligada') return Promise.resolve(true);
+  if (nuvem.estado === 'sem-config' || nuvem.estado === 'falhou') return Promise.resolve(false);
+  if (ligandoNuvem) return ligandoNuvem;
+  ligandoNuvem = (async () => {
+    try {
+      // o arquivo de configuração é de cada instalação e pode simplesmente não existir
+      try { await carregarScript('firebase-config.js'); } catch (e) { }
+      const cfg = window.FIREBASE_CONFIG;
+      if (!cfg || !cfg.apiKey) { nuvem.estado = 'sem-config'; nuvem.motivo = 'firebase-config.js não encontrado'; return false; }
+      const base = 'https://www.gstatic.com/firebasejs/10.14.1/';
+      await carregarScript(base + 'firebase-app-compat.js');
+      await Promise.all([carregarScript(base + 'firebase-auth-compat.js'), carregarScript(base + 'firebase-firestore-compat.js')]);
+      if (!firebase.apps.length) firebase.initializeApp(cfg);
+      await firebase.auth().signInAnonymously();
+      nuvem.db = firebase.firestore();
+      nuvem.estado = 'ligada';
+      return true;
+    } catch (e) {
+      nuvem.estado = 'falhou'; nuvem.motivo = e.message || String(e);
+      console.warn('histórico na nuvem indisponível:', e);
+      return false;
+    } finally { ligandoNuvem = null; }
+  })();
+  return ligandoNuvem;
+}
+
+function competenciaPredominante() {
+  const c = {};
+  for (const par of estado.pares) {
+    const d = (par.xml && par.xml.dataEmissao) || (par.pdf && par.pdf.dataEmissao);
+    if (!d) continue;
+    const k = String(d).slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(k)) c[k] = (c[k] || 0) + 1;
+  }
+  let melhor = '', n = 0;
+  for (const k in c) if (c[k] > n) { n = c[k]; melhor = k; }
+  return melhor;
+}
+
+function resumoDoUso(importados) {
+  const porTipo = {};
+  for (const d of estado.pdf) { const t = d.ilegivel ? 'Sem texto' : (d.tipo || 'Outro'); porTipo[t] = (porTipo[t] || 0) + 1; }
+  const cs = {}; for (const par of estado.pares) cs[par.situacao] = (cs[par.situacao] || 0) + 1;
+  let pendentes = 0;
+  for (const par of estado.pares) { try { if (camposParaConfirmar(par).length) pendentes++; } catch (e) { } }
+  return {
+    empresa: fmtDoc(estado.config.cnpjEmpresa || '') || '',
+    competencia: competenciaPredominante(),
+    xml: estado.xml.filter(x => !x.erro).length,
+    pdfDocumentos: estado.pdf.length,
+    porTipo,
+    conferidos: cs['confere'] || 0,
+    divergentes: (cs['divergente'] || 0) + (cs['atencao'] || 0),
+    pendentes,
+    importados: Math.max(0, Math.round(importados || 0)),
+    versao: VERSAO_APP,
+  };
+}
+
+let retratoAnterior = '';
+let usoTimer = null;
+// carregar XML e depois PDF são duas etapas do mesmo trabalho: espera assentar para não virar dois registros
+function agendarRegistroUso() {
+  clearTimeout(usoTimer);
+  usoTimer = setTimeout(() => registrarUso(0), 25000);
+}
+async function registrarUso(importados) {
+  clearTimeout(usoTimer);
+  if (estado.exemplo || estado.restaurando) return;
+  if (!estado.pdf.length && !estado.xml.length) return;
+  const r = resumoDoUso(importados);
+  const retrato = JSON.stringify(r);
+  if (!r.importados && retrato === retratoAnterior) return;   // o mesmo retrato não vira dois registros
+  retratoAnterior = retrato;
+  if (!(await ligarNuvem())) return;
+  try {
+    r.quando = firebase.firestore.FieldValue.serverTimestamp();
+    await nuvem.db.collection('usos').add(r);
+  } catch (e) { console.warn('não consegui gravar o histórico:', e); }
+}
+
 // ---- cópia no próprio navegador (IndexedDB aguenta o volume; localStorage não)
 const BD = { nome: 'confere-nfse', loja: 'sessao' };
 function abrirBanco() {
@@ -2553,15 +2654,17 @@ function abrirDominio() {
       try {
         const r = await fetch('/api/dominio', { method: 'POST', body: JSON.stringify({ linhas: linhas.map(l => [...l.linha, ...l.extras]), extras: EXTRAS_DOMINIO }) });
         if (!r.ok) throw new Error((await r.json()).erro || r.status);
-        await baixar(nome + '.xlsm', await r.blob()); return;
+        await baixar(nome + '.xlsm', await r.blob()); registrarUso(linhas.length); return;
       } catch (e) { console.error(e); aviso('Servidor não gerou o .xlsm (' + (e.message || e) + '); gerando .xlsx sem a macro.'); }
     }
     await baixar(nome + '.xlsx', await excelDominioSemMacro(linhas));
+    registrarUso(linhas.length);
   };
   $('#domTxt').onclick = () => {
     const linhas = previa(); if (!linhas.length) return aviso('Nada selecionado.');
     const txt = linhas.map(l => l.linha.map((v, i) => (i === 7 || i === 8) ? fmtData(v) : (typeof v === 'number' ? (i >= 12 ? v.toFixed(2).replace('.', ',') : String(v)) : semAcento(String(v ?? '')).replace(/;/g, ' '))).join(';')).join('\r\n') + '\r\n';
     baixar('ServicoTomados.txt', txt, 'text/plain');
+    registrarUso(linhas.length);
   };
   previa();
 }
