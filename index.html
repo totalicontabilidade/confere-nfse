@@ -519,9 +519,29 @@ function temAncestral(el, raiz, nomes) {
 const txt = (r, n, o) => acharEl(r, n, o);
 function filhoDireto(r, nome) { for (const f of r.children) if (f.localName === nome) { const t = f.textContent.trim(); if (t) return t; } return null; }
 
+// O portal não manda só notas: manda também eventos (cancelamento, substituição).
+// Um evento não é nota nenhuma — ele fala SOBRE uma nota, pela chave de acesso.
+function extrairEvento(doc, arquivo) {
+  const r = doc.documentElement;
+  if (!r || r.localName !== 'evento') return null;
+  const chave = digitos(txt(r, ['chNFSe']) || '');
+  if (!chave) return null;
+  let codigo = '';
+  for (const el of doc.getElementsByTagName('*')) if (/^e\d{6}$/.test(el.localName)) codigo = el.localName.slice(1);
+  const motivo = txt(r, ['xMotivo']) || '';
+  const cancelamento = codigo === '101101' || /cancel/i.test(motivo);
+  return {
+    origem: 'evento', evento: true, arquivo, chave, codigo, motivo,
+    cancelamento, autor: digitos(txt(r, ['CNPJAutor']) || ''),
+    quando: dataIso(txt(r, ['dhEvento']) || txt(r, ['dhProc'])),
+    seq: txt(r, ['nSeqEvento']),
+  };
+}
 function extrairXml(texto, arquivo) {
   const doc = new DOMParser().parseFromString(texto, 'application/xml');
   if (doc.getElementsByTagName('parsererror').length) return [{ origem: 'xml', arquivo, erro: 'XML inválido (não foi possível interpretar)' }];
+  const ev = extrairEvento(doc, arquivo);
+  if (ev) return [ev];
   let raizes = [];
   for (const el of doc.getElementsByTagName('*')) if (el.localName === 'infNFSe' || el.localName === 'InfNfse') raizes.push(el);
   if (!raizes.length) raizes = [doc.documentElement];
@@ -1385,7 +1405,7 @@ function cruzar(xmls, pdfs) {
 /* ============================================================
    Estado e interface
    ============================================================ */
-const estado = { xml: [], pdf: [], arquivosXml: [], arquivosPdf: [], arquivosPdfDados: [], pares: [], filtro: 'todos', filtroTipo: '', busca: '', exemplo: true, abertos: new Set(), manuais: {}, decisao: {}, xmlTextos: [], restaurando: false, config: { cnpjEmpresa: '', papel: 'tomador', motor: 'preciso', dominio: { acumNfse: '', acumFatura: '', acumCom: '', serieNfse: '1', serieFatura: '1', cfopDentro: '1933', cfopFora: '2933', ufEmpresa: 'SE', entrada: 'emissao', dataEntrada: '' } } };
+const estado = { xml: [], pdf: [], eventos: [], arquivosXml: [], arquivosPdf: [], arquivosPdfDados: [], pares: [], filtro: 'todos', filtroTipo: '', busca: '', exemplo: true, abertos: new Set(), manuais: {}, decisao: {}, xmlTextos: [], restaurando: false, config: { cnpjEmpresa: '', papel: 'tomador', motor: 'preciso', dominio: { acumNfse: '', acumFatura: '', acumCom: '', serieNfse: '1', serieFatura: '1', cfopDentro: '1933', cfopFora: '2933', ufEmpresa: 'SE', entrada: 'emissao', dataEntrada: '' } } };
 try { estado.manuais = JSON.parse(localStorage.getItem('confere-nfse-manuais') || '{}'); } catch (e) { }
 try { const cfgSalva = JSON.parse(localStorage.getItem('confere-nfse-config') || '{}'); const dom = { ...estado.config.dominio, ...(cfgSalva.dominio || {}) }; Object.assign(estado.config, cfgSalva); estado.config.dominio = dom; } catch (e) { }
 function salvarConfig() { try { localStorage.setItem('confere-nfse-config', JSON.stringify(estado.config)); } catch (e) { } agendarSalvarSessao(); }
@@ -1418,7 +1438,36 @@ function renderListas() {
   $('#statusPdf').title = estado.arquivosPdf.map(a => `${a.nome} — ${a.qtd} doc`).join('\n');
   $('#limparPdf').disabled = !ap;
 }
+// Os eventos chegam misturados com as notas e em qualquer ordem: o cancelamento
+// pode vir antes da nota que ele cancela. Por isso aplicamos tudo a cada recálculo.
+function aplicarEventos() {
+  const evs = estado.xml.filter(x => x.evento);
+  if (evs.length) {
+    estado.eventos = (estado.eventos || []).concat(evs);
+    estado.xml = estado.xml.filter(x => !x.evento);
+  }
+  const lista = estado.eventos || [];
+  if (!lista.length) return;
+  const porChave = new Map();
+  for (const e of lista) {
+    if (!e.chave) continue;
+    if (!porChave.has(e.chave)) porChave.set(e.chave, []);
+    porChave.get(e.chave).push(e);
+  }
+  for (const n of estado.xml) {
+    const meus = n.chave ? porChave.get(digitos(n.chave)) : null;
+    if (!meus) continue;
+    const canc = meus.find(e => e.cancelamento);
+    if (canc) { n.cancelada = true; n.cancelamento = canc; }
+    n.eventos = meus;
+  }
+}
+function eventosOrfaos() {
+  const temChave = new Set(estado.xml.filter(n => n.chave).map(n => digitos(n.chave)));
+  return (estado.eventos || []).filter(e => !temChave.has(e.chave));
+}
 function recalcular() {
+  aplicarEventos();
   estado.exemplo = !estado.xml.length && !estado.pdf.length;
   estado.pares = estado.exemplo ? cruzar(EXEMPLO.xml, EXEMPLO.pdf) : cruzar(estado.xml, estado.pdf);
   $('#exemploAviso').hidden = !estado.exemplo;
@@ -1648,7 +1697,7 @@ function ligarZona(zona, input, lado) {
 ligarZona($('#zonaXml'), $('#inXml'), 'xml');
 ligarZona($('#zonaPdf'), $('#inPdf'), 'pdf');
 // os botões "limpar" ficam dentro do <label>: sem o preventDefault o clique abriria o seletor de arquivos
-$('#limparXml').onclick = e => { e.preventDefault(); e.stopPropagation(); estado.xml = []; estado.arquivosXml = []; estado.xmlTextos = []; estado.abertos.clear(); $('#retomada').hidden = true; renderListas(); recalcular(); agendarSalvarSessao(); };
+$('#limparXml').onclick = e => { e.preventDefault(); e.stopPropagation(); estado.xml = []; estado.eventos = []; estado.arquivosXml = []; estado.xmlTextos = []; estado.abertos.clear(); $('#retomada').hidden = true; renderListas(); recalcular(); agendarSalvarSessao(); };
 $('#limparPdf').onclick = e => { e.preventDefault(); e.stopPropagation(); estado.pdf = []; estado.arquivosPdfDados = []; estado.decisao = {}; estado.abertos.clear(); $('#retomada').hidden = true; renderListas(); recalcular(); agendarSalvarSessao(); };
 document.addEventListener('click', e => {
   const ens = e.target.closest('[data-ensinar]'); if (ens) { e.stopPropagation(); abrirEnsino(estado.pares[+ens.dataset.ensinar]); return; }
@@ -2170,7 +2219,8 @@ async function restaurarSessao() {
     for (const x of estado.xmlTextos) {
       const notas = extrairXml(x.texto, x.nome);
       estado.xml.push(...notas);
-      estado.arquivosXml.push({ nome: x.nome, qtd: notas.length, obs: '' });
+      const evs = notas.filter(n => n.evento).length;
+      estado.arquivosXml.push({ nome: x.nome, qtd: notas.length - evs, obs: evs ? `${evs} evento(s)` : '' });
     }
     // PDFs: a leitura volta do que o servidor guardou, sem reenviar o arquivo
     let falharam = 0;
@@ -2315,16 +2365,27 @@ function abrirPortal() {
       $('#pnStatus').textContent = ''; $('#pnBuscar').disabled = false;
       if (j.erro && !j.total) { $('#pnResultado').innerHTML = `<div class="cf-alerta"><b>Não consegui consultar</b><span>${esc(j.erro)}</span></div>`; return; }
       let novos = 0;
+      let eventosNovos = 0;
       for (const item of (j.xmls || [])) {
         try {
-          const notas = extrairXml(item.xml, `Portal Nacional · NSU ${item.nsu}`);
+          const nome = `Portal Nacional · NSU ${item.nsu}`;
+          const notas = extrairXml(item.xml, nome);
+          let guardar = false;
           for (const n of notas) {
             n.doPortal = true; n.nsu = item.nsu;
+            if (n.evento) {
+              const jaTem = (estado.eventos || []).some(e => e.chave === n.chave && e.codigo === n.codigo && e.seq === n.seq);
+              if (!jaTem) { estado.eventos = (estado.eventos || []).concat([n]); eventosNovos++; guardar = true; }
+              continue;
+            }
             const jaTem = estado.xml.some(x => (x.chave && n.chave && x.chave === n.chave) || (x.nsu && x.nsu === item.nsu));
-            if (!jaTem) { estado.xml.push(n); novos++; }
+            if (!jaTem) { estado.xml.push(n); novos++; guardar = true; }
           }
+          // sem isto, tudo o que veio do portal some ao fechar e reabrir
+          if (guardar) estado.xmlTextos.push({ nome, texto: item.xml });
         } catch (e) { }
       }
+      novos += eventosNovos;
       if (novos) {
         estado.arquivosXml.push({ nome: `Portal Nacional · ${comp || 'tudo'} (${novos} notas)`, qtd: novos, obs: 'ADN' });
         renderListas(); recalcular();
@@ -2382,6 +2443,8 @@ function acompanharPortal() {
   return () => { parar = true; };
 }
 function confrontoPortal(j, novos, comp) {
+  const canceladas = estado.pares.filter(p => p.xml && p.xml.cancelada);
+  const orfaos = eventosOrfaos();
   const doPortal = estado.pares.filter(p => p.xml && p.xml.doPortal);
   const semPdf = doPortal.filter(p => !p.pdf);
   const comPdf = doPortal.length - semPdf.length;
@@ -2397,7 +2460,16 @@ function confrontoPortal(j, novos, comp) {
       <span>${comPdf} nota(s) do portal têm o PDF correspondente.</span>
       ${semPdf.length ? `<span><b>${semPdf.length} nota(s) do portal sem PDF:</b> ${lista(semPdf)}</span>` : '<span>Nenhuma nota do portal ficou sem PDF.</span>'}
       ${pdfSemPortal.length ? `<span><b>${pdfSemPortal.length} NFS-e em PDF que não vieram do portal:</b> ${lista(pdfSemPortal)} — pode ser município fora do padrão nacional.</span>` : ''}
-    </div>`;
+    </div>
+    ${canceladas.length ? `<div class="cf-alerta" style="margin-top:8px;background:var(--bad-bg);color:var(--bad)">
+      <b>${canceladas.length} nota(s) cancelada(s) pelo prestador</b>
+      <span>O cancelamento só existe no portal: quem tem apenas o XML da nota não vê que ela foi cancelada.</span>
+      ${canceladas.map(p => `<span>nº <b>${esc(p.xml.numero || '?')}</b> · ${esc(p.xml.prestadorNome || '')}${p.xml.prestadorDoc ? ' · ' + esc(fmtDoc(p.xml.prestadorDoc)) : ''}${presente(p.xml.valorServicos) ? ' · ' + dinheiro(p.xml.valorServicos) : ''}${p.xml.cancelamento?.quando ? ' · cancelada em ' + esc(fmtData(p.xml.cancelamento.quando)) : ''}</span>`).join('')}
+    </div>` : ''}
+    ${orfaos.length ? `<div class="cf-alerta" style="margin-top:8px">
+      <b>${orfaos.length} evento(s) sem a nota correspondente</b>
+      <span>Chegaram eventos do portal para notas que não estão nesta conferência: ${orfaos.slice(0, 8).map(e => esc(e.motivo || e.codigo || 'evento')).join(', ')}.</span>
+    </div>` : ''}`;
 }
 $('#btnPortal').onclick = abrirPortalComEspera;
 
@@ -2680,7 +2752,7 @@ function abrirDominio() {
         <button class="btn" id="domTxt">Baixar TXT (ServicoTomados.txt)</button>
         <span id="domResumo" class="doc"></span>
       </div>
-      <div id="domPendencia"></div>
+      <div id="domPendencia"></div><div id="domCancel"></div>
       <h3>Prévia</h3>
       <div class="previa" id="domPrevia"></div>
     </div>`, true);
@@ -2703,7 +2775,11 @@ function abrirDominio() {
     const semConfirmar = linhas.filter(l => camposParaConfirmar(l.par).length).length;
     $('#domPendencia').innerHTML = semConfirmar
       ? `<div class="cf-pendencia">⚠ ${semConfirmar} documento(s) têm campo sem confirmação. Abra a <b>Conferência final</b> antes de importar.</div>` : '';
-    $('#domResumo').textContent = `${linhas.length} linha${linhas.length !== 1 ? 's' : ''}${comAviso ? ` · ${comAviso} com aviso` : ''}${fora ? ` · ${fora} tirados na conferência` : ''}`;
+    const canceladas = selecionados().filter(p => p.xml && p.xml.cancelada);
+    $('#domResumo').textContent = `${linhas.length} linha${linhas.length !== 1 ? 's' : ''}${comAviso ? ` · ${comAviso} com aviso` : ''}${fora ? ` · ${fora} tirados na conferência` : ''}${canceladas.length ? ` · ${canceladas.length} cancelada(s)` : ''}`;
+    $('#domCancel').innerHTML = canceladas.length
+      ? `<div class="cf-pendencia" style="background:var(--bad-bg);color:var(--bad)">⚠ ${canceladas.length} nota(s) cancelada(s) pelo prestador vão na importação com a situação <b>2 (cancelada)</b>: ${canceladas.map(p => esc(p.xml.numero || '?')).join(', ')}. Se o Domínio não deve recebê-las, tire-as na <b>Conferência final</b>.</div>`
+      : '';
     const fmt = (v, i) => (i === 7 || i === 8) ? fmtData(v) : (typeof v === 'number' && i >= 12 ? v.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : esc(v));
     $('#domPrevia').innerHTML = linhas.length ? `<table><thead><tr>${COLS_DOMINIO.map(c => `<th>${esc(c)}</th>`).join('')}${EXTRAS_DOMINIO.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${linhas.map(l => `<tr>${l.linha.map((v, i) => `<td>${fmt(v, i)}</td>`).join('')}${l.extras.map((v, i) => `<td class="${i === 5 && v ? 'aviso' : ''}">${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '<p class="vazio">Nada selecionado.</p>';
     return linhas;
