@@ -21,6 +21,13 @@ except Exception:
     pass
 from datetime import datetime
 
+# O atalho sem janela preta roda em pythonw.exe, que nao tem console: sys.stdout e
+# sys.stderr chegam como None. Sem isto, o log de cada pedido estoura em AttributeError
+# e o servidor aceita a conexao e fecha sem responder.
+for _fluxo in ("stdout", "stderr"):
+    if getattr(sys, _fluxo, None) is None:
+        setattr(sys, _fluxo, open(os.devnull, "w", encoding="utf-8"))
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(BASE, "cache")
 MODELOS = os.path.join(BASE, "modelos.json")
@@ -694,7 +701,10 @@ def main():
     except OSError as e:
         print(f"Nao consegui abrir a porta {porta}: {e}")
         print("Ja existe um Confere NFS-e aberto? Feche a outra janela preta e tente de novo.")
-        input("Enter para fechar...")
+        try:
+            input("Enter para fechar...")
+        except (EOFError, RuntimeError):   # sem janela preta nao ha quem responda
+            pass
         return
     print(f"Confere NFS-e rodando em http://localhost:{porta}  (motores OCR: {', '.join(motores_disponiveis()) or 'nenhum'})")
     if "--sem-navegador" not in args:
