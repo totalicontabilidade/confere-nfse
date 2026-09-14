@@ -1370,11 +1370,11 @@ const ORDEM_ST = ['divergente', 'atencao', 'sem-pdf', 'sem-xml', 'outro', 'ilegi
 function cruzar(xmls, pdfs) {
   const livresX = xmls.filter(x => !x.erro), livresP = pdfs.filter(p => !p.ilegivel);
   const pares = [];
-  const casar = (fx, fp) => {
+  const casar = (fx, fp, provavel) => {
     for (let i = livresX.length - 1; i >= 0; i--) {
       const kx = fx(livresX[i]); if (!kx) continue;
       const cand = livresP.filter(p => fp(p) === kx);
-      if (cand.length === 1 && livresX.filter(x => fx(x) === kx).length === 1) { pares.push({ xml: livresX[i], pdf: cand[0] }); livresX.splice(i, 1); livresP.splice(livresP.indexOf(cand[0]), 1); }
+      if (cand.length === 1 && livresX.filter(x => fx(x) === kx).length === 1) { pares.push({ xml: livresX[i], pdf: cand[0], provavel: provavel || null }); livresX.splice(i, 1); livresP.splice(livresP.indexOf(cand[0]), 1); }
     }
   };
   const kNumPrest = d => d.numero && d.prestadorDoc ? numeroNorm(d.numero) + '|' + d.prestadorDoc : null;
@@ -1384,7 +1384,14 @@ function cruzar(xmls, pdfs) {
   const kVal = d => d.valorServicos != null && d.dataEmissao && d.prestadorDoc ? d.valorServicos.toFixed(2) + '|' + d.dataEmissao + '|' + d.prestadorDoc : null;
   const kValNum = d => d.valorServicos != null && d.numero ? d.valorServicos.toFixed(2) + '|' + numeroNorm(d.numero) : null;
   const kSufPrest = d => { const n = numeroNorm(d.numero || ''); return n.length >= 8 && d.prestadorDoc ? n.slice(-8) + '|' + d.prestadorDoc : null; };
+  // Última tentativa, sem o número: em PDF digitalizado o número é justamente o campo
+  // que o OCR mais erra, e às vezes a data junto. Quando o CNPJ do prestador e o valor
+  // batem e a combinação é única dos dois lados, é quase certo ser a mesma nota — mas
+  // o sistema não decide sozinho: marca como provável e manda para a sua confirmação.
+  const kValPrest = d => d.valorServicos != null && d.valorServicos > 0 && d.prestadorDoc
+    ? d.valorServicos.toFixed(2) + '|' + digitos(d.prestadorDoc) : null;
   casar(d => d.chave, d => d.chave); casar(kNumPrest, kNumPrest); casar(kSufPrest, kSufPrest); casar(kCod, kCod); casar(kNumToma, kNumToma); casar(kValNum, kValNum); casar(kNum, kNum); casar(kVal, kVal);
+  casar(kValPrest, kValPrest, 'o número não casou: uni pelo CNPJ do prestador e pelo valor, que são iguais nos dois lados');
   for (const x of livresX) pares.push({ xml: x, pdf: null });
   for (const p of livresP) pares.push({ xml: null, pdf: p });
   for (const p of pdfs.filter(p => p.ilegivel)) pares.push({ xml: null, pdf: p });
@@ -1562,7 +1569,8 @@ function renderTabela() {
     const aberto = estado.abertos.has(p.id);
     const parteNome = papelPrest ? (p.xml?.prestadorNome || p.pdf?.prestadorNome) : (p.xml?.tomadorNome || p.pdf?.tomadorNome);
     const parteDoc = papelPrest ? (p.xml?.prestadorDoc || p.pdf?.prestadorDoc) : (p.xml?.tomadorDoc || p.pdf?.tomadorDoc);
-    const canc = p.xml?.cancelada ? ' <span class="tag ruim">Cancelada</span>' : '';
+    const canc = (p.xml?.cancelada ? ' <span class="tag ruim">Cancelada</span>' : '')
+      + (p.provavel ? ' <span class="tag novo" title="Confirme na conferência final">Par provável</span>' : '');
     const tipo = p.pdf ? (p.pdf.ilegivel ? 'Sem texto' : p.pdf.tipo) : 'NFS-e';
     const sub = p.pdf ? `${tipo} · pág. ${esc(p.pdf.pagina)}` : `${tipo} · só XML`;
     return `<tr class="linha${aberto ? ' aberta' : ''}" data-id="${p.id}">
@@ -2499,7 +2507,11 @@ const CF_CAMPOS = [
 const conf = { pares: [], i: 0, soDuvida: false, zoom: 1 };
 function docsParaImportar() {
   const ativos = estado.dominioGrupos || GRUPOS_DOMINIO.filter(g => g.on).map(g => g.id);
-  return estado.pares.filter(p => GRUPOS_DOMINIO.some(g => ativos.includes(g.id) && g.f(p)));
+  const base = estado.pares.filter(p => GRUPOS_DOMINIO.some(g => ativos.includes(g.id) && g.f(p)));
+  // O par montado sem o número precisa do seu olho, mesmo que o grupo dele não vá para o
+  // Domínio: é justamente o caso em que o sistema pode ter juntado dois documentos diferentes.
+  for (const p of estado.pares) if (parProvavelPendente(p) && !base.includes(p)) base.push(p);
+  return base;
 }
 // Confiança do OCR no documento: a média das leituras dos campos que viraram números.
 function confiancaOcr(d) {
@@ -2509,11 +2521,14 @@ function confiancaOcr(d) {
   if (!cs.length) return 1;
   return cs.reduce((a, b) => a + b, 0) / cs.length;
 }
+// Par montado sem o número: só vale depois que você olhar a imagem e confirmar.
+function parProvavelPendente(par) { return !!par.provavel && !(par.pdf && par.pdf.parOk); }
 function motivosAtencao(par) {
   const l = linhaDominio(par);
   const m = l.avisos.filter(a => a !== 'acumulador não configurado' && !/^sem (número|data|valor)$/.test(a));
   for (const c of camposParaConfirmar(par)) m.push(`${c.rotulo}: ${c.motivo}`);
   if (par.pdf && par.pdf.tipo === 'Outro') m.push('tipo do documento não identificado');
+  if (par.provavel) m.push('par provável: ' + par.provavel);
   return m;
 }
 function precisaAtencao(par) { return motivosAtencao(par).length > 0; }
@@ -2545,7 +2560,8 @@ function abrirConfFinal() {
           </div>
           <figure id="cfFig"></figure>
         </div>
-        <div class="cf-lado">
+        <div class="cf-lado" id="cfLado">
+          <div id="cfPar"></div>
           <div id="cfAlerta"></div>
           <div class="cf-form" id="cfForm"></div>
           <div class="cf-decisao">
@@ -2564,11 +2580,19 @@ function abrirConfFinal() {
       </div>
     </div>`, true);
   $('#cfAnt').onclick = () => irCf(-1);
+  $('#cfLado').addEventListener('click', e => {
+    if (e.target.id !== 'cfParOk') return;
+    const par = cfAtual(); const ch = chaveDoc(par.pdf || par.xml);
+    estado.manuais[ch] = { ...(estado.manuais[ch] || {}), parOk: true };
+    if (par.pdf) par.pdf.parOk = true;
+    agendarSalvarSessao(); renderCf();
+  });
   $('#cfProx').onclick = () => irCf(1);
   $('#cfSoDuvida').onchange = e => { conf.soDuvida = e.target.checked; conf.i = 0; renderCf(); };
   $('#cfAprovar').onclick = () => {
     const par = cfAtual(); const pend = camposParaConfirmar(par);
     if (pend.length) { aviso(`Falta confirmar: ${pend.map(x => x.rotulo).join(', ')}. Corrija o campo ou clique em "Está certo".`); return; }
+    if (parProvavelPendente(par)) { aviso('Este PDF foi unido ao XML pelo CNPJ e pelo valor, não pelo número. Confirme que é a mesma nota antes de aprovar.'); return; }
     setDecisao(par, 'ap'); irCf(1);
   };
   $('#cfRecusar').onclick = () => { setDecisao(cfAtual(), 're'); irCf(1); };
@@ -2622,6 +2646,13 @@ function renderCf() {
   // alerta
   const avisos = motivosAtencao(par);
   const pend = camposParaConfirmar(par);
+  $('#cfPar').innerHTML = parProvavelPendente(par)
+    ? `<div class="cf-alerta" style="background:var(--warn-bg);color:var(--warn)">
+         <b>É a mesma nota?</b>
+         <span>O número não bateu — <b>${esc(par.xml?.numero || '?')}</b> no XML contra <b>${esc(par.pdf?.numero || 'não lido')}</b> no PDF — mas o CNPJ do prestador e o valor de ${esc(fmtDinheiro(par.xml?.valorServicos ?? par.pdf?.valorServicos))} são iguais nos dois. Olhe a imagem ao lado e decida.</span>
+         <span class="cf-confirmar" style="margin-top:4px"><button type="button" id="cfParOk">Sim, é a mesma nota</button></span>
+       </div>`
+    : (par.provavel ? `<div class="cf-alerta ok"><b>Par confirmado por você</b><span>Unido pelo CNPJ do prestador e pelo valor; o número do PDF foi lido errado.</span></div>` : '');
   $('#cfAlerta').innerHTML = avisos.length
     ? `<div class="cf-alerta"><b>${pend.length ? `${pend.length} campo(s) precisam da sua confirmação` : 'Confira antes de aprovar'}</b>${avisos.map(a => `<span>· ${esc(a)}</span>`).join('')}<span style="font-weight:400;margin-top:3px">Corrija o campo ou clique em "Está certo" para confirmar o que o sistema leu.</span></div>`
     : `<div class="cf-alerta ok"><b>Tudo lido com segurança</b><span>CNPJ, número, data e valor vieram do XML, do QR code ou do texto do documento. Confira e aprove.</span></div>`;
