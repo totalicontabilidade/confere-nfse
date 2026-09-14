@@ -2378,20 +2378,31 @@ function abrirPortal() {
               if (!jaTem) { estado.eventos = (estado.eventos || []).concat([n]); eventosNovos++; guardar = true; }
               continue;
             }
-            const jaTem = estado.xml.some(x => (x.chave && n.chave && x.chave === n.chave) || (x.nsu && x.nsu === item.nsu));
-            if (!jaTem) { estado.xml.push(n); novos++; guardar = true; }
+            const igual = estado.xml.find(x => (x.chave && n.chave && digitos(x.chave) === digitos(n.chave)) || (x.nsu && x.nsu === item.nsu));
+            if (igual) { igual.doPortal = true; if (!igual.nsu) igual.nsu = item.nsu; }   // já era sua; agora sabemos que o portal confirma
+            else { estado.xml.push(n); novos++; guardar = true; }
           }
           // sem isto, tudo o que veio do portal some ao fechar e reabrir
           if (guardar) estado.xmlTextos.push({ nome, texto: item.xml });
         } catch (e) { }
       }
-      novos += eventosNovos;
+      j.eventosNovos = eventosNovos;   // evento não é nota: conta à parte
       if (novos) {
         estado.arquivosXml.push({ nome: `Portal Nacional · ${comp || 'tudo'} (${novos} notas)`, qtd: novos, obs: 'ADN' });
         renderListas(); recalcular();
       }
       $('#pnNsu').value = j.ultimoNSU;
-      $('#pnResultado').innerHTML = confrontoPortal(j, novos, comp);
+      j.eventos = (j.xmls || []).filter(i => i.tipo === 'EVENTO').length;
+      j.notas = (j.total || 0) - j.eventos;
+      // se o confronto falhar, é melhor dizer do que deixar a barra de progresso parada na tela
+      try {
+        $('#pnResultado').innerHTML = confrontoPortal(j, novos, comp);
+      } catch (e) {
+        console.error(e);
+        $('#pnResultado').innerHTML = `<div class="cf-alerta"><b>A busca funcionou, mas não consegui montar o confronto</b>
+          <span>${j.total} nota(s) na competência, ${j.lidos} documentos percorridos, ${novos} entraram na conferência. A tabela abaixo já está atualizada.</span>
+          <span class="doc">${esc(e.message || String(e))}</span></div>`;
+      }
     } catch (err) { pararAcompanhamento(); $('#pnStatus').textContent = ''; $('#pnBuscar').disabled = false; aviso('Falha: ' + err.message); }
   };
 }
@@ -2451,8 +2462,8 @@ function confrontoPortal(j, novos, comp) {
   const pdfSemPortal = estado.pares.filter(p => p.pdf && !p.pdf.ilegivel && p.pdf.tipo === 'NFS-e' && !p.xml);
   const lista = arr => arr.slice(0, 15).map(p => esc(p.numero || '?')).join(', ') + (arr.length > 15 ? '…' : '');
   return `<div class="cf-alerta ${semPdf.length ? '' : 'ok'}">
-      <b>${j.total} nota(s) do portal na competência ${esc(comp || 'toda')}</b>
-      <span>${j.lidos} documentos percorridos na esteira em ${j.segundos}s. ${novos} entraram na conferência. Parou no NSU ${j.ultimoNSU}${j.fim ? ' (fim da esteira)' : ''}.</span>
+      <b>${j.notas} nota(s)${j.eventos ? ` e ${j.eventos} evento(s)` : ''} do portal na competência ${esc(comp || 'toda')}</b>
+      <span>${j.lidos.toLocaleString('pt-BR')} documentos percorridos na esteira em ${j.segundos}s. ${novos ? `${novos} nota(s) nova(s)` : 'Nenhuma nota nova'}${j.notas - novos > 0 ? `, ${j.notas - novos} já estavam aqui` : ''}${j.eventosNovos ? ` · ${j.eventosNovos} evento(s) novo(s)` : ''}. Parou no NSU ${j.ultimoNSU}${j.fim ? ' (fim da esteira)' : ''}.</span>
       ${j.erro ? `<span>Aviso: ${esc(j.erro)}</span>` : ''}
     </div>
     <div class="cf-alerta ${semPdf.length ? '' : 'ok'}" style="margin-top:8px">
@@ -2464,7 +2475,7 @@ function confrontoPortal(j, novos, comp) {
     ${canceladas.length ? `<div class="cf-alerta" style="margin-top:8px;background:var(--bad-bg);color:var(--bad)">
       <b>${canceladas.length} nota(s) cancelada(s) pelo prestador</b>
       <span>O cancelamento só existe no portal: quem tem apenas o XML da nota não vê que ela foi cancelada.</span>
-      ${canceladas.map(p => `<span>nº <b>${esc(p.xml.numero || '?')}</b> · ${esc(p.xml.prestadorNome || '')}${p.xml.prestadorDoc ? ' · ' + esc(fmtDoc(p.xml.prestadorDoc)) : ''}${presente(p.xml.valorServicos) ? ' · ' + dinheiro(p.xml.valorServicos) : ''}${p.xml.cancelamento?.quando ? ' · cancelada em ' + esc(fmtData(p.xml.cancelamento.quando)) : ''}</span>`).join('')}
+      ${canceladas.map(p => `<span>nº <b>${esc(p.xml.numero || '?')}</b> · ${esc(p.xml.prestadorNome || '')}${p.xml.prestadorDoc ? ' · ' + esc(fmtDoc(p.xml.prestadorDoc)) : ''}${presente(p.xml.valorServicos) ? ' · ' + fmtDinheiro(p.xml.valorServicos) : ''}${p.xml.cancelamento?.quando ? ' · cancelada em ' + esc(fmtData(p.xml.cancelamento.quando)) : ''}</span>`).join('')}
     </div>` : ''}
     ${orfaos.length ? `<div class="cf-alerta" style="margin-top:8px">
       <b>${orfaos.length} evento(s) sem a nota correspondente</b>
