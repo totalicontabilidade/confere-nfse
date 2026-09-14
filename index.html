@@ -2212,12 +2212,25 @@ async function lerPortal() {
   try { const r = await fetch('/api/portal', { cache: 'no-store' }); portal.estado = await r.json(); } catch (e) { portal.estado = null; }
   return portal.estado;
 }
+const PORTAL_SUB = 'Puxa as notas da empresa no Ambiente de Dados Nacional e compara com o que você recebeu';
 async function abrirPortalComEspera() {
   if (!servidor.ok) { abrirPortal(); return; }
-  aviso('Lendo os certificados instalados neste computador…');
+  // Ler os certificados do Windows leva alguns segundos. Se esperar por isso para abrir,
+  // o clique parece não ter funcionado e a pessoa desiste — então a gaveta abre na hora.
+  if (portal.estado && portal.estado.certificados) {
+    abrirPortal();                                   // já temos a lista: mostra agora
+    lerPortal().then(() => { if (portalNaTela()) abrirPortal(); });   // e atualiza por baixo
+    return;
+  }
+  abrirGaveta('Portal Nacional da NFS-e', PORTAL_SUB, `
+    <div class="painel" style="border-left:0">
+      <div class="instrucao">Lendo os certificados instalados neste computador… isso leva alguns segundos.</div>
+      <div class="progresso"><i style="width:100%;animation:none"></i></div>
+    </div>`, true);
   await lerPortal();
-  abrirPortal();
+  if (portalNaTela()) abrirPortal();                 // se você fechou enquanto isso, não reabre
 }
+function portalNaTela() { return !$('#gaveta').hidden && $('#gavTitulo').textContent.startsWith('Portal Nacional'); }
 function abrirPortal() {
   const e = portal.estado || {};
   const cert = e.certificado || {};
@@ -2226,7 +2239,7 @@ function abrirPortal() {
   const compPadrao = estado.pdf.length && estado.pdf.find(d => d.competencia) ? estado.pdf.find(d => d.competencia).competencia
     : `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
   const passo = (n, feito, titulo, texto) => `<div class="pn-passo ${feito === true ? 'feito' : feito === false ? 'falta' : ''}"><span class="pn-n">${feito === true ? '✓' : n}</span><div class="pn-c"><b>${titulo}</b><span>${texto}</span></div></div>`;
-  abrirGaveta('Portal Nacional da NFS-e', 'Puxa as notas da empresa no Ambiente de Dados Nacional e compara com o que você recebeu', `
+  abrirGaveta('Portal Nacional da NFS-e', PORTAL_SUB, `
     <div class="painel" style="border-left:0">
       <div class="instrucao">O sistema consulta o Portal Nacional com o <b>certificado digital da empresa instalado neste computador</b>. A chave privada nunca sai do Windows. A busca caminha por uma esteira numerada (NSU) e o sistema guarda onde parou, então da segunda vez só traz o que é novo.</div>
       ${!servidor.ok ? '<div class="aviso-faixa"><b>Precisa do servidor local.</b> Abra pelo iniciar.bat.</div>' : ''}
