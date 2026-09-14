@@ -260,6 +260,8 @@ tr.detalhe td{background:var(--surface2);padding:14px 18px 18px 22px}
 .cf-rodape{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:11px 16px;border-top:1px solid var(--line);background:var(--surface)}
 .cf-resumo{font-size:13px;color:var(--muted)}
 .cf-resumo b{color:var(--ink)}
+.pn-escopo{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--muted);background:var(--surface2);border-radius:7px;padding:9px 11px;font-family:var(--sans);text-transform:none;letter-spacing:0;line-height:1.5}
+.pn-escopo b{color:var(--ink);font-weight:600}
 .pn-passo{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line)}
 .pn-passo:last-child{border-bottom:0}
 .pn-n{width:24px;height:24px;border-radius:50%;background:var(--surface2);color:var(--muted);display:grid;place-items:center;font-family:var(--mono);font-size:12px;font-weight:700;flex:none}
@@ -2289,6 +2291,46 @@ async function abrirPortalComEspera() {
   if (portalNaTela()) abrirPortal();                 // se você fechou enquanto isso, não reabre
 }
 function portalNaTela() { return !$('#gaveta').hidden && $('#gavTitulo').textContent.startsWith('Portal Nacional'); }
+// O sistema não precisa perguntar a competência: ela está nos documentos que você carregou.
+// Mas trazer toda competência que aparece encheria a tela: um lote de maio costuma ter
+// algumas notas de abril, e puxar abril inteiro traz dezenas de notas sem PDF nenhum.
+// Então vem inteira só a competência que domina o lote; as outras entram pelas pistas.
+function competenciasDoTrabalho() {
+  const cont = {};
+  const por = d => { const k = d && (d.competencia || (d.dataEmissao ? String(d.dataEmissao).slice(0, 7) : '')); if (/^\d{4}-\d{2}$/.test(k || '')) cont[k] = (cont[k] || 0) + 1; };
+  estado.pdf.filter(d => !d.ilegivel).forEach(por);
+  if (!Object.keys(cont).length) estado.xml.forEach(por);
+  const datados = Object.values(cont).reduce((a, b) => a + b, 0);
+  if (!datados) { const h = new Date(); return [`${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}`]; }
+  const corte = Math.max(3, datados * 0.25);
+  const maior = Object.entries(cont).sort((a, b) => b[1] - a[1])[0][0];
+  const escolhidas = Object.entries(cont).filter(([k, n]) => n >= corte || k === maior).map(([k]) => k);
+  return escolhidas.sort();
+}
+function competenciasDeFora() {
+  const dentro = new Set(competenciasDoTrabalho()); const fora = {};
+  for (const d of estado.pdf.filter(x => !x.ilegivel)) {
+    const k = d.competencia || (d.dataEmissao ? String(d.dataEmissao).slice(0, 7) : '');
+    if (/^\d{4}-\d{2}$/.test(k) && !dentro.has(k)) fora[k] = (fora[k] || 0) + 1;
+  }
+  return Object.entries(fora).sort((a, b) => b[1] - a[1]);
+}
+// E o PDF que ficou sem XML vira pista: se existir no portal uma nota do mesmo prestador
+// com o mesmo valor ou o mesmo número, ela vem mesmo sendo de outra competência.
+function pistasDosOrfaos() {
+  const vistos = new Set(), out = [];
+  for (const par of estado.pares) {
+    const d = par.pdf;
+    if (!d || d.ilegivel || par.xml) continue;
+    const cnpj = digitos(d.prestadorDoc || ''); if (!cnpj) continue;
+    const valor = (d.valorServicos != null && d.valorServicos > 0) ? Number(d.valorServicos).toFixed(2) : '';
+    const numero = numeroNorm(d.numero || '').replace(/^0+/, '');
+    const k = cnpj + '|' + valor + '|' + numero;
+    if (vistos.has(k)) continue;
+    vistos.add(k); out.push({ cnpj, valor, numero });
+  }
+  return out;
+}
 function abrirPortal() {
   const e = portal.estado || {};
   const cert = e.certificado || {};
@@ -2319,7 +2361,8 @@ function abrirPortal() {
       </div>
       <h3>O que buscar</h3>
       <div class="form-dom">
-        <label>Competência<input id="pnComp" type="month" value="${esc(compPadrao)}"></label>
+        <label style="grid-column:1/-1">O que vai ser buscado
+          <div class="pn-escopo" id="pnEscopo"></div></label>
         <label>Papel da empresa<select id="pnPapel"><option value="tomador"${estado.config.papel !== 'prestador' ? ' selected' : ''}>Tomadora</option><option value="prestador"${estado.config.papel === 'prestador' ? ' selected' : ''}>Prestadora</option><option value="">Os dois</option></select></label>
         <label>Continuar a partir do NSU<input id="pnNsu" value="${esc(String(e.ultimoNSU ?? 0))}" inputmode="numeric" title="A esteira do portal é numerada. Zere para varrer tudo desde o começo."></label>
       </div>
@@ -2332,6 +2375,16 @@ function abrirPortal() {
       <div id="pnResultado"></div>
       <div class="regras-mini">Uma varredura completa desde o começo lê alguns milhares de documentos e leva poucos minutos; depois disso o sistema continua de onde parou. Só entram notas do padrão nacional: municípios com sistema próprio não aparecem no portal.</div>
     </div>`, true);
+  const pintarEscopo = () => {
+    const comps = competenciasDoTrabalho(), pistas = pistasDosOrfaos();
+    const nomes = comps.map(c => c.slice(5) + '/' + c.slice(0, 4));
+    const fora = competenciasDeFora();
+    $('#pnEscopo').innerHTML = `<span><b>${nomes.join(', ')}</b> — ${comps.length === 1 ? 'a competência' : 'as competências'} dos documentos que você carregou</span>
+      ${pistas.length ? `<span>+ qualquer nota que case com ${pistas.length} PDF(s) sem XML (por CNPJ e valor), <b>em qualquer competência</b></span>`
+                      : '<span>Nenhum PDF sem XML por enquanto: só as competências acima.</span>'}
+      ${fora.length ? `<span>${fora.map(([k, n]) => `${k.slice(5)}/${k.slice(0, 4)} aparece em ${n} página(s)`).join(', ')} — não vem inteira, só pelas pistas.</span>` : ''}`;
+  };
+  pintarEscopo();
   const guardar = async (extra = {}) => {
     const corpo = Object.assign({
       origem: 'windows', thumbprint: $('#pnCertSel').value, ambiente: $('#pnAmb').value,
@@ -2361,13 +2414,14 @@ function abrirPortal() {
   };
   $('#pnBuscar').onclick = async () => {
     await guardar();
-    const comp = $('#pnComp').value, papel = $('#pnPapel').value;
+    const comps = competenciasDoTrabalho(), pistas = pistasDosOrfaos(), papel = $('#pnPapel').value;
+    const comp = comps.length === 1 ? comps[0] : comps.map(c => c.slice(5) + '/' + c.slice(0, 4)).join(', ');
     $('#pnStatus').textContent = 'consultando o portal…';
     $('#pnBuscar').disabled = true;
     $('#pnResultado').innerHTML = '<div class="cf-alerta" style="margin-top:8px"><b>Abrindo a esteira do portal…</b></div>';
     const pararAcompanhamento = acompanharPortal();
     try {
-      const r = await fetch('/api/portal/consultar', { method: 'POST', body: JSON.stringify({ nsu: parseInt(digitos($('#pnNsu').value) || '0', 10), competencia: comp, papel }) });
+      const r = await fetch('/api/portal/consultar', { method: 'POST', body: JSON.stringify({ nsu: parseInt(digitos($('#pnNsu').value) || '0', 10), competencias: comps, pistas, papel }) });
       const j = await r.json();
       pararAcompanhamento();
       $('#pnStatus').textContent = ''; $('#pnBuscar').disabled = false;
@@ -2386,6 +2440,7 @@ function abrirPortal() {
               if (!jaTem) { estado.eventos = (estado.eventos || []).concat([n]); eventosNovos++; guardar = true; }
               continue;
             }
+            n.porPista = !!item.porPista;
             const igual = estado.xml.find(x => (x.chave && n.chave && digitos(x.chave) === digitos(n.chave)) || (x.nsu && x.nsu === item.nsu));
             if (igual) { igual.doPortal = true; if (!igual.nsu) igual.nsu = item.nsu; }   // já era sua; agora sabemos que o portal confirma
             else { estado.xml.push(n); novos++; guardar = true; }
@@ -2395,6 +2450,18 @@ function abrirPortal() {
         } catch (e) { }
       }
       j.eventosNovos = eventosNovos;   // evento não é nota: conta à parte
+      recalcular();
+      // A nota trazida por pista era um palpite: "existe alguma nota deste prestador com
+      // este valor?". Prestador de mensalidade fixa devolve um ano inteiro de notas iguais.
+      // A que achou o PDF fica; a que não achou sai, senão vira ruído em 'sem PDF'.
+      const descartar = new Set(estado.pares.filter(p => p.xml && p.xml.porPista && !p.pdf).map(p => p.xml));
+      if (descartar.size) {
+        const fora = new Set([...descartar].map(x => x.arquivo));
+        estado.xml = estado.xml.filter(x => !descartar.has(x));
+        estado.xmlTextos = estado.xmlTextos.filter(t => !fora.has(t.nome) || estado.xml.some(x => x.arquivo === t.nome));
+        j.descartadas = descartar.size;
+        novos -= descartar.size;
+      }
       if (novos) {
         estado.arquivosXml.push({ nome: `Portal Nacional · ${comp || 'tudo'} (${novos} notas)`, qtd: novos, obs: 'ADN' });
         renderListas(); recalcular();
@@ -2471,7 +2538,7 @@ function confrontoPortal(j, novos, comp) {
   const lista = arr => arr.slice(0, 15).map(p => esc(p.numero || '?')).join(', ') + (arr.length > 15 ? '…' : '');
   return `<div class="cf-alerta ${semPdf.length ? '' : 'ok'}">
       <b>${j.notas} nota(s)${j.eventos ? ` e ${j.eventos} evento(s)` : ''} do portal na competência ${esc(comp || 'toda')}</b>
-      <span>${j.lidos.toLocaleString('pt-BR')} documentos percorridos na esteira em ${j.segundos}s. ${novos ? `${novos} nota(s) nova(s)` : 'Nenhuma nota nova'}${j.notas - novos > 0 ? `, ${j.notas - novos} já estavam aqui` : ''}${j.eventosNovos ? ` · ${j.eventosNovos} evento(s) novo(s)` : ''}. Parou no NSU ${j.ultimoNSU}${j.fim ? ' (fim da esteira)' : ''}.</span>
+      <span>${j.descartadas ? `${j.descartadas} nota(s) vieram por palpite e não acharam PDF: descartadas. ` : ''}${j.lidos.toLocaleString('pt-BR')} documentos percorridos na esteira em ${j.segundos}s. ${novos ? `${novos} nota(s) nova(s)` : 'Nenhuma nota nova'}${j.notas - novos > 0 ? `, ${j.notas - novos} já estavam aqui` : ''}${j.eventosNovos ? ` · ${j.eventosNovos} evento(s) novo(s)` : ''}. Parou no NSU ${j.ultimoNSU}${j.fim ? ' (fim da esteira)' : ''}.</span>
       ${j.erro ? `<span>Aviso: ${esc(j.erro)}</span>` : ''}
     </div>
     <div class="cf-alerta ${semPdf.length ? '' : 'ok'}" style="margin-top:8px">

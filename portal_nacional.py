@@ -254,7 +254,46 @@ def _papel_no_xml(xml, cnpj):
     return ""
 
 
-def consultar_dfe(nsu_inicial=None, limite_lotes=400, progresso=None, competencia=None,
+def _pista_do_xml(xml):
+    """(cnpj do prestador, valor com 2 casas, numero) - por regex, que e barato:
+    isto roda uma vez por documento da esteira, e sao milhares."""
+    bloco = re.search(r"<(?:emit|prest|PrestadorServico)>.*?</(?:emit|prest|PrestadorServico)>", xml, re.S)
+    cnpj = ""
+    if bloco:
+        m = re.search(r"<(?:CNPJ|Cnpj|CPF|Cpf)>([\d.\-/]+)<", bloco.group(0))
+        if m:
+            cnpj = re.sub(r"\D", "", m.group(1))
+    valor = ""
+    m = re.search(r"<(?:vLiq|ValorLiquidoNfse|vServ|ValorServicos)>([\d.,]+)<", xml)
+    if m:
+        try:
+            valor = "%.2f" % float(m.group(1).replace(",", "."))
+        except ValueError:
+            valor = ""
+    m = re.search(r"<(?:nNFSe|Numero)>([^<]+)<", xml)
+    numero = re.sub(r"\D", "", m.group(1)).lstrip("0") if m else ""
+    return cnpj, valor, numero
+
+
+def _serve_de_pista(xml, pistas):
+    """A nota interessa mesmo fora da competencia se ela casa com um PDF que ficou
+    sem XML na tela: mesmo prestador e mesmo valor, ou mesmo prestador e mesmo numero."""
+    if not pistas:
+        return False
+    cnpj, valor, numero = _pista_do_xml(xml)
+    if not cnpj:
+        return False
+    for p in pistas:
+        if p.get("cnpj") != cnpj:
+            continue
+        if valor and p.get("valor") and valor == p["valor"]:
+            return True
+        if numero and p.get("numero") and numero == p["numero"]:
+            return True
+    return False
+
+
+def consultar_dfe(nsu_inicial=None, limite_lotes=400, progresso=None, competencia=None, pistas=None,
                   papel=None, max_segundos=240):
     """Percorre a esteira do ADN a partir do NSU e devolve os XMLs.
     `competencia` = 'AAAA-MM' (ou lista) filtra o que volta; a esteira continua avancando.
@@ -263,6 +302,7 @@ def consultar_dfe(nsu_inicial=None, limite_lotes=400, progresso=None, competenci
     inicio = _t.time()
     comps = [competencia] if isinstance(competencia, str) and competencia else (competencia or [])
     comps = [c for c in comps if c]
+    pistas = [p for p in (pistas or []) if p.get("cnpj")]
     cfg = ler_config()
     st = situacao()
     if not st["configurado"]:
@@ -318,13 +358,17 @@ def consultar_dfe(nsu_inicial=None, limite_lotes=400, progresso=None, competenci
                 lidos += 1
                 xml = _descompacta(doc)
                 comp = _competencia_do_xml(xml)
+                por_pista = False
                 if comps and comp not in comps:
-                    continue
+                    if not _serve_de_pista(xml, pistas):
+                        continue
+                    por_pista = True   # veio por palpite: se não achar o PDF dela, some
                 pp = _papel_no_xml(xml, cnpj)
                 if papel and pp and pp != papel:
                     continue
                 xmls.append({"nsu": n, "chave": item.get("ChaveAcesso"), "competencia": comp,
-                             "papel": pp, "tipo": item.get("TipoDocumento"), "xml": xml})
+                             "papel": pp, "tipo": item.get("TipoDocumento"), "porPista": por_pista,
+                             "xml": xml})
             if progresso:
                 progresso(lidos, nsu)
     if fim:
