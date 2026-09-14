@@ -469,7 +469,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return self.rfile.read(n)
 
     def log_message(self, fmt, *args):
-        if "/api/ocr/status" in (args[0] if args else ""):
+        if any(x in (args[0] if args else "") for x in ("/api/ocr/status", "/api/portal/status")):
             return
         super().log_message(fmt, *args)
 
@@ -493,6 +493,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
         if u.path == "/api/ping":
             return self._json({"ok": True, "motores": motores_disponiveis(), "versao": 5, "sessao": os.path.exists(SESSAO), "modeloDominio": os.path.exists(MODELO_DOMINIO), "portal": os.path.exists(os.path.join(BASE, "portal_nacional.py"))})
+        if u.path == "/api/portal/status":
+            return self._json(PORTAL_PROG)
         if u.path == "/api/ocr/status":
             job = JOBS.get(re.sub(r"[^0-9a-z]", "", q.get("job", [""])[0])[:64])
             if not job:
@@ -615,9 +617,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if acao == "testar":
                     return self._json(portal_nacional.testar())
                 if acao == "consultar":
-                    return self._json(portal_nacional.consultar_dfe(
-                        corpo.get("nsu"), competencia=corpo.get("competencia"),
-                        papel=corpo.get("papel") or None))
+                    inicio_nsu = int(corpo.get("nsu") or 0)
+                    cfg_p = portal_nacional.ler_config()
+                    PORTAL_PROG.update({
+                        "ativo": True, "lidos": 0, "nsu": inicio_nsu, "nsuInicial": inicio_nsu,
+                        "alvo": int(cfg_p.get("fimEsteira") or 0), "inicio": time.time(), "segundos": 0,
+                    })
+
+                    def prog(lidos, nsu):
+                        PORTAL_PROG["lidos"] = lidos
+                        PORTAL_PROG["nsu"] = nsu
+                        PORTAL_PROG["segundos"] = round(time.time() - PORTAL_PROG["inicio"], 1)
+
+                    try:
+                        res = portal_nacional.consultar_dfe(
+                            corpo.get("nsu"), competencia=corpo.get("competencia"),
+                            papel=corpo.get("papel") or None, progresso=prog)
+                    finally:
+                        PORTAL_PROG["ativo"] = False
+                    return self._json(res)
                 return self._json({"erro": "acao desconhecida"}, 404)
             except Exception as e:  # noqa
                 return self._json({"erro": str(e)}, 500)
@@ -676,6 +694,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 json.dump(obj, f, ensure_ascii=False, indent=1)
             return self._json({"ok": True, "quantidade": len(obj.get("modelos", []))})
         return self._json({"erro": "rota desconhecida"}, 404)
+
+
+# como vai a varredura do portal: a tela pergunta de segundo em segundo
+PORTAL_PROG = {"ativo": False, "lidos": 0, "nsu": 0, "nsuInicial": 0, "alvo": 0,
+               "segundos": 0, "inicio": 0, "maxSegundos": 240}
 
 
 def main():

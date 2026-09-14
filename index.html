@@ -2304,11 +2304,14 @@ function abrirPortal() {
   $('#pnBuscar').onclick = async () => {
     await guardar();
     const comp = $('#pnComp').value, papel = $('#pnPapel').value;
-    $('#pnStatus').textContent = 'consultando o portal… isto pode levar alguns minutos';
+    $('#pnStatus').textContent = 'consultando o portal…';
     $('#pnBuscar').disabled = true;
+    $('#pnResultado').innerHTML = '<div class="cf-alerta" style="margin-top:8px"><b>Abrindo a esteira do portal…</b></div>';
+    const pararAcompanhamento = acompanharPortal();
     try {
       const r = await fetch('/api/portal/consultar', { method: 'POST', body: JSON.stringify({ nsu: parseInt(digitos($('#pnNsu').value) || '0', 10), competencia: comp, papel }) });
       const j = await r.json();
+      pararAcompanhamento();
       $('#pnStatus').textContent = ''; $('#pnBuscar').disabled = false;
       if (j.erro && !j.total) { $('#pnResultado').innerHTML = `<div class="cf-alerta"><b>Não consegui consultar</b><span>${esc(j.erro)}</span></div>`; return; }
       let novos = 0;
@@ -2328,8 +2331,55 @@ function abrirPortal() {
       }
       $('#pnNsu').value = j.ultimoNSU;
       $('#pnResultado').innerHTML = confrontoPortal(j, novos, comp);
-    } catch (err) { $('#pnStatus').textContent = ''; $('#pnBuscar').disabled = false; aviso('Falha: ' + err.message); }
+    } catch (err) { pararAcompanhamento(); $('#pnStatus').textContent = ''; $('#pnBuscar').disabled = false; aviso('Falha: ' + err.message); }
   };
+}
+function tempoCurto(seg) {
+  seg = Math.max(0, Math.round(seg));
+  if (seg < 60) return seg + 's';
+  const m = Math.floor(seg / 60);
+  return m + 'min' + (seg % 60 ? ' ' + String(seg % 60).padStart(2, '0') + 's' : '');
+}
+// A esteira do portal não diz quanto tem pela frente. Só dá para prometer tempo
+// quando já sabemos onde ela acaba — e aí a conta é honesta. Senão, mostramos o
+// que está acontecendo de verdade: quanto já leu, a que velocidade, há quanto tempo.
+function textoProgresso(p) {
+  const vel = p.segundos > 0 ? p.lidos / p.segundos : 0;
+  const andado = p.nsu - p.nsuInicial, total = p.alvo - p.nsuInicial;
+  let barra, frase;
+  if (total > 0 && andado > 0) {
+    const fr = Math.min(0.99, andado / total);
+    const falta = p.segundos * (1 / fr - 1);
+    barra = Math.round(fr * 100);
+    frase = `${barra}% da esteira · faltam cerca de <b>${tempoCurto(falta)}</b>`;
+  } else {
+    barra = null;
+    frase = `<b>primeira varredura:</b> ainda não dá para dizer quanto falta — só depois de chegar ao fim uma vez`;
+  }
+  const limite = Math.round(100 * Math.min(1, p.segundos / (p.maxSegundos || 240)));
+  return `<div class="cf-alerta" style="margin-top:8px">
+      <b>Varrendo o portal…</b>
+      <div class="progresso" style="margin:2px 0 4px">
+        <i style="width:${barra === null ? limite : barra}%;${barra === null ? 'background:var(--info)' : ''}"></i>
+      </div>
+      <span>${frase}</span>
+      <span>${p.lidos.toLocaleString('pt-BR')} documento(s) percorrido(s) · ${vel ? vel.toFixed(0) : '—'} por segundo · ${tempoCurto(p.segundos)} corridos · NSU ${p.nsu.toLocaleString('pt-BR')}</span>
+      ${barra === null ? `<span class="doc">A barra azul mostra o tempo até a pausa automática de ${tempoCurto(p.maxSegundos || 240)}; se chegar lá, é só clicar de novo para continuar.</span>` : ''}
+    </div>`;
+}
+function acompanharPortal() {
+  let parar = false;
+  (async () => {
+    while (!parar) {
+      await new Promise(r => setTimeout(r, 1000));
+      if (parar) break;
+      try {
+        const p = await (await fetch('/api/portal/status', { cache: 'no-store' })).json();
+        if (!parar && p && p.ativo) $('#pnResultado').innerHTML = textoProgresso(p);
+      } catch (e) { }
+    }
+  })();
+  return () => { parar = true; };
 }
 function confrontoPortal(j, novos, comp) {
   const doPortal = estado.pares.filter(p => p.xml && p.xml.doPortal);

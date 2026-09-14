@@ -156,6 +156,7 @@ def situacao():
         "configurado": pronto, "origem": origem, "thumbprint": cfg.get("thumbprint", ""),
         "caminho": cfg.get("certificado", ""), "ambiente": cfg.get("ambiente", "producao"),
         "cnpj": cfg.get("cnpj", ""), "ultimoNSU": cfg.get("ultimoNSU", 0),
+        "fimEsteira": cfg.get("fimEsteira", 0), "maxSegundos": 240,
         "certificado": info, "certificados": listar_certificados(), "temCurl": _tem_curl(),
     }
 
@@ -326,7 +327,11 @@ def consultar_dfe(nsu_inicial=None, limite_lotes=400, progresso=None, competenci
                              "papel": pp, "tipo": item.get("TipoDocumento"), "xml": xml})
             if progresso:
                 progresso(lidos, nsu)
-    if xmls:
+    if fim:
+        # ate onde a esteira chegou hoje. Na proxima varredura isto vira a regua
+        # da barra de progresso: sem isso nao da para dizer quanto falta.
+        cfg["fimEsteira"] = nsu
+    if xmls or fim:
         cfg["ultimoNSU"] = nsu
         gravar_config(cfg)
     return {"xmls": xmls, "ultimoNSU": nsu, "total": len(xmls), "lidos": lidos, "erro": erro,
