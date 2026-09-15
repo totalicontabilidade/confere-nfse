@@ -260,6 +260,22 @@ tr.detalhe td{background:var(--surface2);padding:14px 18px 18px 22px}
 .cf-rodape{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:11px 16px;border-top:1px solid var(--line);background:var(--surface)}
 .cf-resumo{font-size:13px;color:var(--muted)}
 .cf-resumo b{color:var(--ink)}
+.achado{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:10px;box-shadow:var(--shadow);padding:12px 16px;margin-top:14px;display:flex;flex-direction:column;gap:9px}
+.achado h3{margin:0;font-size:13px;font-weight:650;color:var(--titulo);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.achado h3 .qt{font-family:var(--mono);background:var(--gold);color:#0B1F3A;border-radius:999px;padding:1px 9px;font-size:12px}
+.achado .sub{font-size:12.5px;color:var(--muted)}
+.achado .fecha{margin-left:auto;background:none;border:0;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:5px}
+.achado .fecha:hover{background:var(--surface2)}
+.achado-lista{display:flex;flex-direction:column;gap:2px}
+.achado-item{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:5px 8px;border-radius:6px;font-size:13px;background:none;border:0;text-align:left;width:100%;cursor:pointer;color:var(--ink);font-family:inherit}
+.achado-item:hover{background:var(--surface2)}
+.achado-item .n{font-family:var(--mono);font-weight:600;white-space:nowrap}
+.achado-item .q{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.achado-item .v{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.achado-item .o{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.achado-item .o.ruim{color:var(--bad)}
+.achado-canc{background:var(--bad-bg);border-left-color:var(--bad)}
+.achado-canc h3{color:var(--bad)} .achado-canc h3 .qt{background:var(--bad);color:#fff}
 .pn-escopo{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--muted);background:var(--surface2);border-radius:7px;padding:9px 11px;font-family:var(--sans);text-transform:none;letter-spacing:0;line-height:1.5}
 .pn-escopo b{color:var(--ink);font-weight:600}
 .pn-passo{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line)}
@@ -347,6 +363,8 @@ tr.detalhe td{background:var(--surface2);padding:14px 18px 18px 22px}
 <div class="aviso-faixa" id="retomada" hidden style="background:var(--ok-bg);color:var(--ok)"></div>
 <div class="aviso-faixa" id="erroLeitura" hidden style="flex-direction:column;align-items:flex-start;gap:2px"></div>
 <div class="aviso-faixa" id="semServidor" hidden><b>Sem servidor local.</b> PDFs digitalizados (só imagem) não podem ser lidos aqui. Abra o sistema pelo <code>iniciar.bat</code> para ter OCR.</div>
+
+<div id="achadoPortal" hidden></div>
 
 <section class="paineis">
   <div class="painel-res"><h2>Documentos identificados</h2><div class="corpo" id="painelDocs"></div></div>
@@ -1480,7 +1498,7 @@ function recalcular() {
   estado.exemplo = !estado.xml.length && !estado.pdf.length;
   estado.pares = estado.exemplo ? cruzar(EXEMPLO.xml, EXEMPLO.pdf) : cruzar(estado.xml, estado.pdf);
   $('#exemploAviso').hidden = !estado.exemplo;
-  renderResumo(); renderTabela();
+  renderResumo(); renderAchadoPortal(); renderTabela();
   $('#cabImpressao').textContent = `Conferência XML × PDF · ${estado.config.cnpjEmpresa ? 'Empresa ' + fmtDoc(estado.config.cnpjEmpresa) + ' · ' : ''}${new Date().toLocaleString('pt-BR')} · ${estado.pares.length} registros`;
 }
 function linhaResumo({ tag, cls, rot, qtd, ativo, total, attr }) {
@@ -1489,6 +1507,44 @@ function linhaResumo({ tag, cls, rot, qtd, ativo, total, attr }) {
     ${cls ? `<span class="pto ${cls}"></span>` : '<span style="width:8px;flex:none"></span>'}
     <span class="rt">${rot}</span><span class="pt"></span><span class="qt">${qtd}</span></${el}>`;
 }
+// O que o Portal Nacional trouxe e você não tinha. Fica na tela principal, porque dentro
+// da gaveta some quando você fecha — e é justamente o que não pode passar batido.
+function veioSoDoPortal(par) { return !!par.xml && String(par.xml.arquivo || '').startsWith('Portal Nacional'); }
+function renderAchadoPortal() {
+  const caixa = $('#achadoPortal');
+  const novas = estado.pares.filter(veioSoDoPortal);
+  const canc = estado.pares.filter(p => p.xml && p.xml.cancelada);
+  if (estado.achadoFechado || (!novas.length && !canc.length)) { caixa.hidden = true; caixa.innerHTML = ''; return; }
+  const soma = arr => arr.reduce((t, p) => t + (Number(p.xml.valorServicos) || 0), 0);
+  const item = (p, txt, ruim) => `<button class="achado-item" data-ir="${p.id}" type="button">
+      <span class="n">${esc(p.xml.numero || '?')}</span>
+      <span class="q">${esc(p.xml.prestadorNome || '')}${p.xml.prestadorDoc ? ' · ' + esc(fmtDoc(p.xml.prestadorDoc)) : ''}</span>
+      <span class="v">${presente(p.xml.valorServicos) ? esc(fmtDinheiro(p.xml.valorServicos)) : ''}</span>
+      <span class="o${ruim ? ' ruim' : ''}">${esc(txt)}</span></button>`;
+  let html = '';
+  if (novas.length) html += `<div class="achado">
+      <h3>Achado no Portal Nacional, fora dos seus XMLs <span class="qt">${novas.length}</span>
+        <button class="fecha" data-fecha="1" title="Esconder até a próxima busca">×</button></h3>
+      <span class="sub">Nota que o portal tem contra a empresa e não veio nos arquivos que você carregou — ${esc(fmtDinheiro(soma(novas)))} no total. Clique para abrir na tabela.</span>
+      <div class="achado-lista">${novas.map(p => item(p, p.pdf ? 'PDF na pág. ' + p.pdf.pagina : 'sem PDF', !p.pdf)).join('')}</div></div>`;
+  if (canc.length) html += `<div class="achado achado-canc">
+      <h3>Canceladas pelo prestador <span class="qt">${canc.length}</span>${novas.length ? '' : '<button class="fecha" data-fecha="1" title="Esconder até a próxima busca">×</button>'}</h3>
+      <span class="sub">O cancelamento só existe no portal: com o XML da nota na mão ela parece boa — ${esc(fmtDinheiro(soma(canc)))} no total.</span>
+      <div class="achado-lista">${canc.map(p => item(p, p.xml.cancelamento?.quando ? 'cancelada em ' + fmtData(p.xml.cancelamento.quando) : 'cancelada', true)).join('')}</div></div>`;
+  caixa.innerHTML = html;
+  caixa.hidden = false;
+}
+$('#achadoPortal').addEventListener('click', e => {
+  if (e.target.closest('[data-fecha]')) { estado.achadoFechado = true; renderAchadoPortal(); return; }
+  const b = e.target.closest('[data-ir]');
+  if (!b) return;
+  const id = +b.dataset.ir;
+  estado.filtro = 'todos'; estado.filtroTipo = ''; $('#busca').value = ''; estado.busca = '';
+  estado.abertos.add(id);
+  renderResumo(); renderTabela();
+  const tr = document.querySelector(`tr.linha[data-id="${id}"]`);
+  if (tr) tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
 function renderResumo() {
   const docs = estado.exemplo ? EXEMPLO.pdf : estado.pdf;
   const cont = {};
@@ -2496,6 +2552,7 @@ function abrirPortal() {
       }
       $('#pnNsu').value = j.ultimoNSU;
       // marca que ESTE trabalho já foi varrido até aqui
+      estado.achadoFechado = false;   // busca nova volta a mostrar o que achou
       if (portal.estado) portal.estado.ultimoNSU = j.ultimoNSU;
       try { localStorage.setItem('confere-nfse-ultima-busca', JSON.stringify({ assinatura: assinaturaDoTrabalho(), nsu: j.ultimoNSU, quando: new Date().toISOString() })); } catch (err) { }
       if ($('#pnModo')) { $('#pnModo').value = 'novo'; pintarModo(); }
