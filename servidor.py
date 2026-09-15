@@ -183,6 +183,25 @@ def _pontos_uteis(itens):
     return len(re.findall(r"[A-Za-zÀ-ú]{3,}|\d{2,}", txt))
 
 
+def _variantes_qr(cv2, arr):
+    """O QR do scan chega borrado e de baixo contraste: vale tentar mais de um preparo."""
+    yield arr
+    yield cv2.threshold(arr, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    yield cv2.addWeighted(arr, 1.6, cv2.GaussianBlur(arr, (0, 0), 3), -0.6, 0)
+
+
+def _detectores_qr(cv2):
+    """O Aruco acha e le muito mais que o detector antigo; o antigo ainda pega casos
+    que o novo perde, entao os dois rodam."""
+    dets = []
+    for nome in ("QRCodeDetectorAruco", "QRCodeDetector"):
+        try:
+            dets.append(getattr(cv2, nome)())
+        except Exception:
+            pass
+    return dets
+
+
 def ler_qrcodes(img):
     """QR code da nota: quando o scan preserva o codigo, a chave vem sem erro de leitura."""
     try:
@@ -190,20 +209,63 @@ def ler_qrcodes(img):
     except Exception:
         return []
     arr = np.array(img.convert("L"))
-    det = cv2.QRCodeDetector()
+    dets = _detectores_qr(cv2)
     saida = []
-    tentativas = [arr, cv2.threshold(arr, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]]
-    for v in tentativas:
-        try:
-            ok, textos, *_ = det.detectAndDecodeMulti(v)
-            if ok:
-                for t in textos:
-                    if t and t not in saida:
-                        saida.append(t)
-        except Exception:
-            pass
-        if saida:
-            break
+
+    def guarda(textos):
+        for t in textos or []:
+            if t and t not in saida:
+                saida.append(t[:900])
+
+    for det in dets:
+        for v in _variantes_qr(cv2, arr):
+            try:
+                ok, textos, *_ = det.detectAndDecodeMulti(v)
+                if ok:
+                    guarda(textos)
+            except Exception:
+                pass
+            if saida:
+                return saida
+
+    # Nada leu, mas o codigo pode estar ali: recorta cada QR encontrado e amplia.
+    # Num scan de 300dpi o modulo do QR fica com menos de 2 pixels e so decodifica ampliado.
+    for det in dets:
+        for v in _variantes_qr(cv2, arr):
+            try:
+                ok, pts = det.detectMulti(v)
+            except Exception:
+                continue
+            if not ok or pts is None:
+                continue
+            for quad in pts:
+                xs, ys = quad[:, 0], quad[:, 1]
+                m = 14
+                x0, x1 = max(0, int(xs.min()) - m), min(arr.shape[1], int(xs.max()) + m)
+                y0, y1 = max(0, int(ys.min()) - m), min(arr.shape[0], int(ys.max()) + m)
+                if x1 - x0 < 12 or y1 - y0 < 12:
+                    continue
+                rec = arr[y0:y1, x0:x1]
+                for fator in (3, 5):
+                    amp = cv2.resize(rec, None, fx=fator, fy=fator, interpolation=cv2.INTER_CUBIC)
+                    for d2 in dets:
+                        for v2 in _variantes_qr(cv2, amp):
+                            try:
+                                ok2, t2, *_ = d2.detectAndDecodeMulti(v2)
+                                if ok2:
+                                    guarda(t2)
+                            except Exception:
+                                pass
+                            if saida:
+                                return saida
+                        try:
+                            t3 = d2.detectAndDecode(amp)
+                            t3 = t3[0] if isinstance(t3, tuple) else t3
+                            if t3:
+                                guarda([t3])
+                                return saida
+                        except Exception:
+                            pass
     return saida
 
 

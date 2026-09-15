@@ -2675,6 +2675,15 @@ function docsParaImportar() {
   return base;
 }
 // Confiança do OCR no documento: a média das leituras dos campos que viraram números.
+// O QR nem sempre traz chave: em fatura de prefeitura vem um link de conferência, e em
+// boleto vem a assinatura do banco. O link é justamente o que salva a página mal digitalizada.
+function qrNaConferencia(d) {
+  const link = (d.qr || []).find(q => /^https?:\/\//i.test(q));
+  const temChave = d.onde && d.onde.chave && d.onde.chave.fonte === 'qr';
+  if (temChave) return `QR code lido: chave de acesso confiável${link ? ` · <a href="${esc(link)}" target="_blank" rel="noopener">abrir no emissor</a>` : ''}`;
+  if (link) return `QR code lido, sem chave de acesso · <a href="${esc(link)}" target="_blank" rel="noopener">abrir no emissor para conferir</a>`;
+  return 'QR code lido, mas sem chave nem link (assinatura do boleto)';
+}
 function confiancaOcr(d) {
   if (!d || !d.L) return 1;
   const cs = [];
@@ -2862,7 +2871,7 @@ function renderCf() {
   });
   $('#cfExtra').innerHTML = [
     d ? `Leitura: ${d.fonte === 'texto' ? 'texto do PDF' : 'OCR ' + esc(d.motor || '')}` : '',
-    d && d.qr ? 'QR code lido nesta página (chave confiável)' : '',
+    d && d.qr ? qrNaConferencia(d) : '',
     par.xml ? `XML: ${esc(par.xml.arquivo)}` : '',
     d && d.modelo ? `Modelo: ${esc(d.modelo.nome)}` : '',
   ].filter(Boolean).join(' · ');
