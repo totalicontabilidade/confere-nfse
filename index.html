@@ -103,14 +103,14 @@ button.lr:hover{background:var(--surface2)}
 .aviso-faixa code{font-family:var(--mono)}
 .tabela-wrap{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow-x:auto;box-shadow:var(--shadow)}
 table{border-collapse:collapse;width:100%;min-width:920px}
-th{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--surface2)}
-td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--surface2)}
+td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
 tbody tr:last-child td{border-bottom:0}
 tr.linha{cursor:pointer;transition:background .12s}
 tr.linha:hover td{background:var(--surface2)}
 tr.linha td:first-child{padding-left:0}
 .st{display:inline-flex;align-items:center;gap:9px;font-size:12.5px;font-weight:600;white-space:nowrap}
-.st::before{content:"";display:block;width:3px;height:30px;border-radius:0 3px 3px 0;background:var(--neutral)}
+.st::before{content:"";display:block;width:3px;height:26px;border-radius:0 3px 3px 0;background:var(--neutral)}
 .st.s-confere{color:var(--ok)} .st.s-confere::before{background:var(--ok)}
 .st.s-divergente{color:var(--bad)} .st.s-divergente::before{background:var(--bad)}
 .st.s-atencao{color:var(--warn)} .st.s-atencao::before{background:var(--warn)}
@@ -122,25 +122,27 @@ tr.linha td:first-child{padding-left:0}
 .duas{display:flex;flex-direction:column;gap:2px;min-width:0}
 .duas .a{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .duas .b{font-size:11.5px;color:var(--muted);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cel-doc .a{font-family:var(--mono);font-weight:600;font-size:14px}
-.cel-parte{max-width:250px}
+.cel-doc{max-width:230px}
+.cel-doc .a{font-family:var(--mono);font-weight:600;font-size:14px;display:flex;align-items:center;gap:5px}
+.cel-doc .a > .tag{flex:0 1 auto;min-width:0}
+.cel-parte{max-width:190px}
 .cel-valor .a{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13.5px}
 .cel-valor .b{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .cel-valor.difere .b{color:var(--bad);font-weight:600}
-.tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:1px 5px;border-radius:3px;background:var(--neutral-bg);color:var(--neutral);vertical-align:middle;white-space:nowrap}
+.tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:1px 5px;border-radius:3px;background:var(--neutral-bg);color:var(--neutral);vertical-align:middle;white-space:nowrap;max-width:14ch;overflow:hidden;text-overflow:ellipsis}
 .tag.ruim{background:var(--bad-bg);color:var(--bad)}
 .tag.modelo{background:var(--accent-soft);color:var(--accent)}
 .tag.novo{background:var(--warn-bg);color:var(--warn)}
-.dif{font-size:12.5px;color:var(--muted);display:block;max-width:330px;line-height:1.4}
+.dif{font-size:12.5px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-width:190px;max-width:330px;line-height:1.35}
 .dif b{color:var(--bad);font-weight:600}
 .dif i{color:var(--warn);font-style:normal}
 .dif.ok{color:var(--ok)}
-.chk{display:inline-flex;gap:4px;flex-wrap:wrap;min-width:196px}
+.chk{display:inline-flex;gap:3px;flex-wrap:wrap;min-width:164px}
 .chk span{font-family:var(--mono);font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:4px;white-space:nowrap;letter-spacing:.02em}
 .chk .c-ok{background:var(--ok-bg);color:var(--ok)}
 .chk .c-div{background:var(--bad-bg);color:var(--bad)}
 .chk .c-falta{background:var(--neutral-bg);color:var(--neutral)}
-.col-chk{min-width:210px}
+.col-chk{min-width:170px}
 .conf-principal{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-bottom:12px}
 .cp{border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:9px 12px;background:var(--surface);display:flex;flex-direction:column;gap:4px}
 .cp.ok{border-left-color:var(--ok)} .cp.div{border-left-color:var(--bad)} .cp.falta{border-left-color:var(--neutral)}
@@ -1594,7 +1596,10 @@ function resumoDiferencas(p) {
   const outras = p.campos.filter(c => c.est === 'div' && !CAMPOS_CHAVE.includes(c.k)).map(c => `<b>${esc(c.r)}</b>`);
   const avisos = p.campos.filter(c => c.est === 'aviso').map(c => `<i>${esc(c.r)}</i>`);
   const tudo = [...partes, ...outras, ...avisos];
-  return tudo.length ? `<span class="dif">${tudo.join(' · ')}</span>` : `<span class="dif ok">CNPJ, número e data conferem</span>`;
+  if (!tudo.length) return `<span class="dif ok">CNPJ, número e data conferem</span>`;
+  // a coluna mostra 3 linhas; o resto fica no title, para não esticar a linha
+  const inteiro = tudo.join(' · ').replace(/<[^>]+>/g, '');
+  return `<span class="dif" title="${esc(inteiro)}">${tudo.join(' · ')}</span>`;
 }
 function selosConferencia(p) {
   if (!p.conf) return '<span class="doc">—</span>';
