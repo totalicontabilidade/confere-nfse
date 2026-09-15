@@ -2317,6 +2317,20 @@ function competenciasDeFora() {
 }
 // E o PDF que ficou sem XML vira pista: se existir no portal uma nota do mesmo prestador
 // com o mesmo valor ou o mesmo número, ela vem mesmo sendo de outra competência.
+// Para saber se a conferência mudou desde a última busca. Se mudou, continuar de onde
+// parou não serve: as notas dos PDFs novos estão ATRÁS do ponto onde a esteira parou.
+function assinaturaDoTrabalho() {
+  const pdfs = [...new Set(estado.pdf.map(d => d.hash || d.arquivo))].sort().join(',');
+  const xmls = estado.xmlTextos.filter(x => !String(x.nome || '').startsWith('Portal')).length;
+  return pdfs + '|' + xmls;
+}
+function ultimaBusca() {
+  try { return JSON.parse(localStorage.getItem('confere-nfse-ultima-busca') || 'null'); } catch (e) { return null; }
+}
+function mesmoTrabalhoDaUltimaBusca() {
+  const u = ultimaBusca();
+  return !!(u && u.assinatura && u.assinatura === assinaturaDoTrabalho());
+}
 function pistasDosOrfaos() {
   const vistos = new Set(), out = [];
   for (const par of estado.pares) {
@@ -2364,7 +2378,11 @@ function abrirPortal() {
         <label style="grid-column:1/-1">O que vai ser buscado
           <div class="pn-escopo" id="pnEscopo"></div></label>
         <label>Papel da empresa<select id="pnPapel"><option value="tomador"${estado.config.papel !== 'prestador' ? ' selected' : ''}>Tomadora</option><option value="prestador"${estado.config.papel === 'prestador' ? ' selected' : ''}>Prestadora</option><option value="">Os dois</option></select></label>
-        <label>Continuar a partir do NSU<input id="pnNsu" value="${esc(String(e.ultimoNSU ?? 0))}" inputmode="numeric" title="A esteira do portal é numerada. Zere para varrer tudo desde o começo."></label>
+        <label>De onde buscar<select id="pnModo">
+            <option value="tudo"${mesmoTrabalhoDaUltimaBusca() ? '' : ' selected'}>Varrer tudo desde o começo (~3 min)</option>
+            <option value="novo"${mesmoTrabalhoDaUltimaBusca() ? ' selected' : ''}>Só o que chegou depois da última busca (segundos)</option>
+          </select><span class="doc" id="pnModoNota"></span></label>
+        <input type="hidden" id="pnNsu" value="${esc(String(e.ultimoNSU ?? 0))}">
       </div>
       <div class="acoes">
         <button class="btn" id="pnSalvar">Guardar certificado</button>
@@ -2384,7 +2402,16 @@ function abrirPortal() {
                       : '<span>Nenhum PDF sem XML por enquanto: só as competências acima.</span>'}
       ${fora.length ? `<span>${fora.map(([k, n]) => `${k.slice(5)}/${k.slice(0, 4)} aparece em ${n} página(s)`).join(', ')} — não vem inteira, só pelas pistas.</span>` : ''}`;
   };
-  pintarEscopo();
+  const pintarModo = () => {
+    const novo = $('#pnModo').value === 'novo';
+    $('#pnNsu').value = novo ? String(portal.estado?.ultimoNSU ?? 0) : '0';
+    $('#pnModoNota').textContent = novo
+      ? `Continua do NSU ${portal.estado?.ultimoNSU ?? 0}. Serve para ver se chegou nota nova; não acha o que já passou.`
+      : (mesmoTrabalhoDaUltimaBusca()
+          ? 'A esteira inteira. Mais demorado, mas encontra nota de qualquer competência.'
+          : 'Os documentos mudaram desde a última busca, então a esteira precisa ser percorrida inteira.');
+  };
+  pintarEscopo(); pintarModo();
   const guardar = async (extra = {}) => {
     const corpo = Object.assign({
       origem: 'windows', thumbprint: $('#pnCertSel').value, ambiente: $('#pnAmb').value,
@@ -2394,6 +2421,7 @@ function abrirPortal() {
     portal.estado = await r.json();
     return portal.estado;
   };
+  $('#pnModo').onchange = pintarModo;
   $('#pnCertSel').onchange = async () => {
     const st = await guardar();
     const c = st.certificado || {};
@@ -2467,6 +2495,10 @@ function abrirPortal() {
         renderListas(); recalcular();
       }
       $('#pnNsu').value = j.ultimoNSU;
+      // marca que ESTE trabalho já foi varrido até aqui
+      if (portal.estado) portal.estado.ultimoNSU = j.ultimoNSU;
+      try { localStorage.setItem('confere-nfse-ultima-busca', JSON.stringify({ assinatura: assinaturaDoTrabalho(), nsu: j.ultimoNSU, quando: new Date().toISOString() })); } catch (err) { }
+      if ($('#pnModo')) { $('#pnModo').value = 'novo'; pintarModo(); }
       j.eventos = (j.xmls || []).filter(i => i.tipo === 'EVENTO').length;
       j.notas = (j.total || 0) - j.eventos;
       // se o confronto falhar, é melhor dizer do que deixar a barra de progresso parada na tela
