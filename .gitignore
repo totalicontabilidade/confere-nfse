@@ -36,3 +36,13 @@ desktop.ini
 
 # configuracao do Firebase desta instalacao
 firebase-config.js
+
+# acesso pela rede do escritorio: o codigo (com hash) e o segredo do cookie
+acesso.json
+
+# uma conferencia em andamento por computador
+sessoes/
+
+# log do servidor e aviso de parada
+servidor.log
+parar.sinal

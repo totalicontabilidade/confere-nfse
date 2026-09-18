@@ -337,6 +337,7 @@ tr.detalhe td{background:var(--surface2);padding:14px 18px 18px 22px}
       </label>
       <button class="btn-topo" id="btnPortal" title="Consulta as notas da empresa no Portal Nacional">Portal Nacional</button>
       <button class="btn-topo" id="btnModelos">Modelos (0)</button>
+      <button class="btn-topo" id="btnRede" hidden title="Deixar outros computadores do escritório usarem o sistema">Acesso pela rede</button>
     </div>
   </div>
 </header>
@@ -2228,6 +2229,19 @@ function perguntar({ titulo, corpo, sim, nao }) {
     div.querySelector('[data-r="sim"]').focus();
   });
 }
+// Cada navegador tem a sua conferência em andamento no servidor. Sem isso, com dois
+// computadores usando o sistema, o último a gravar apagaria o trabalho do outro.
+function idDoNavegador() {
+  try {
+    let id = localStorage.getItem('confere-nfse-id');
+    if (!/^[0-9a-z]{16,40}$/.test(id || '')) {
+      id = [...crypto.getRandomValues(new Uint8Array(12))].map(b => b.toString(16).padStart(2, '0')).join('');
+      localStorage.setItem('confere-nfse-id', id);
+    }
+    return id;
+  } catch (e) { return 'semlocalstorage01'; }
+}
+function urlSessao() { return '/api/sessao?id=' + idDoNavegador(); }
 let salvarTimer = null;
 function agendarSalvarSessao() {
   if (estado.exemplo || estado.restaurando) return;
@@ -2247,17 +2261,17 @@ async function salvarSessao() {
     dominioGrupos: estado.dominioGrupos || null,
   };
   guardarNoNavegador(corpo);
-  try { await fetch('/api/sessao', { method: 'PUT', body: JSON.stringify(corpo) }); } catch (e) { }
+  try { await fetch(urlSessao(), { method: 'PUT', body: JSON.stringify(corpo) }); } catch (e) { }
 }
 async function apagarSessao() {
   estado.xmlTextos = [];
   await apagarDoNavegador();
-  try { await fetch('/api/sessao', { method: 'DELETE' }); } catch (e) { }
+  try { await fetch(urlSessao(), { method: 'DELETE' }); } catch (e) { }
 }
 async function restaurarSessao() {
   let ses = null;
   if (servidor.ok) {
-    try { const r = await fetch('/api/sessao', { cache: 'no-store' }); const j = await r.json(); if (!j.vazia) ses = j; } catch (e) { }
+    try { const r = await fetch(urlSessao(), { cache: 'no-store' }); const j = await r.json(); if (!j.vazia) ses = j; } catch (e) { }
   }
   if (!ses) ses = await lerDoNavegador();
   if (!ses || (!ses.pdfs?.length && !ses.xmlTextos?.length)) return false;
@@ -2652,6 +2666,63 @@ function confrontoPortal(j, novos, comp) {
     </div>` : ''}`;
 }
 $('#btnPortal').onclick = abrirPortalComEspera;
+
+// ---- acesso pela rede do escritório. Só aparece no computador onde o sistema está.
+const nesteComputador = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname);
+if (nesteComputador) $('#btnRede').hidden = false;
+async function abrirRede() {
+  let st = null;
+  try { st = await (await fetch('/api/acesso', { cache: 'no-store' })).json(); } catch (e) { }
+  if (!st || st.erro) return aviso('O servidor não respondeu. Ele está rodando?');
+  const pintar = st => {
+    const end = (st.enderecos || []);
+    $('#gavCorpo').innerHTML = `
+    <div class="painel" style="border-left:0">
+      <div class="instrucao">Outro computador do escritório abre o sistema pelo navegador, digitando o endereço abaixo. O trabalho pesado — leitura dos PDFs, Portal Nacional, certificado — continua acontecendo <b>neste</b> computador, que precisa estar ligado.</div>
+      <h3>Situação</h3>
+      <div class="cf-alerta ${st.rede ? 'ok' : ''}">
+        <b>${st.rede ? 'Acesso pela rede ligado' : 'Acesso pela rede desligado'}</b>
+        <span>${st.rede ? 'Outros computadores entram digitando o código.' : 'Só este computador consegue usar o sistema.'}</span>
+      </div>
+      ${end.length ? `<h3>Endereço para digitar no outro computador</h3>
+        <div class="pn-escopo" style="font-family:var(--mono);font-size:15px">${end.map(e => `<b>${esc(e)}</b>`).join('<br>')}</div>` : ''}
+      <h3>Código de acesso</h3>
+      <div class="form-dom">
+        <label style="grid-column:1/-1">${st.temCodigo ? 'Trocar o código (quem já entrou precisa digitar o novo)' : 'Defina um código — pelo menos 6 caracteres'}
+          <input id="redeCodigo" type="password" autocomplete="new-password" placeholder="${st.temCodigo ? 'deixe em branco para manter o atual' : 'código de acesso'}"></label>
+      </div>
+      <div class="acoes">
+        <button class="btn principal" id="redeLigar">${st.rede ? 'Salvar' : 'Ligar o acesso pela rede'}</button>
+        ${st.rede ? '<button class="btn" id="redeDesligar">Desligar</button>' : ''}
+        <span class="doc" id="redeMsg"></span>
+      </div>
+      <div class="regras-mini">
+        Quem entra pela rede usa tudo, inclusive a consulta ao Portal com o certificado da empresa — por isso o código.
+        Trocar o certificado só é possível neste computador. Cada computador tem a sua própria conferência em andamento;
+        a leitura dos PDFs e os modelos ensinados são compartilhados.
+      </div>
+    </div>`;
+    const enviar = async corpo => {
+      $('#redeMsg').textContent = 'salvando…';
+      try {
+        const r = await fetch('/api/acesso', { method: 'POST', body: JSON.stringify(corpo) });
+        const j = await r.json();
+        if (!r.ok) { $('#redeMsg').textContent = j.erro || 'não consegui salvar'; return; }
+        pintar(j); aviso(j.rede ? 'Acesso pela rede ligado.' : 'Acesso pela rede desligado.');
+      } catch (e) { $('#redeMsg').textContent = 'o servidor não respondeu'; }
+    };
+    $('#redeLigar').onclick = () => {
+      const c = $('#redeCodigo').value;
+      if (c && c.length < 6) { $('#redeMsg').textContent = 'o código precisa de pelo menos 6 caracteres'; return; }
+      if (!c && !st.temCodigo) { $('#redeMsg').textContent = 'defina um código primeiro'; return; }
+      enviar(c ? { codigo: c, rede: true } : { rede: true });
+    };
+    const d = $('#redeDesligar'); if (d) d.onclick = () => enviar({ rede: false });
+  };
+  abrirGaveta('Acesso pela rede', 'Deixar outros computadores do escritório usarem o sistema', '', true);
+  pintar(st);
+}
+$('#btnRede').onclick = abrirRede;
 
 /* ============================================================
    Conferência final: o usuário confirma, com a página à vista, o que vai ser importado

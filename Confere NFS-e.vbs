@@ -28,7 +28,8 @@ On Error GoTo 0
 If Not noAr Then
     ' 0 = sem janela nenhuma; False = nao espera terminar
     shell.CurrentDirectory = pasta
-    shell.Run """" & python & """ """ & pasta & "\servidor.py"" 8131 --sem-navegador", 0, False
+    ' python.exe dentro de um laco que reinicia se cair; o firewall ja libera esse programa
+    shell.Run "cmd /c """ & pasta & "\servidor-continuo.bat""", 0, False
 
     ' espera o servidor responder (ate ~40s)
     For i = 1 To 40

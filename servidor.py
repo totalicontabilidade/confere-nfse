@@ -31,7 +31,9 @@ for _fluxo in ("stdout", "stderr"):
 BASE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(BASE, "cache")
 MODELOS = os.path.join(BASE, "modelos.json")
-SESSAO = os.path.join(BASE, "sessao.json")
+SESSAO = os.path.join(BASE, "sessao.json")            # a antiga, de antes de haver uma por computador
+SESSOES = os.path.join(BASE, "sessoes")                 # uma por navegador: dois computadores nao se atropelam
+ACESSO = os.path.join(BASE, "acesso.json")              # acesso pela rede: ligado ou nao, e o codigo
 PORTA_PADRAO = 8131
 MAX_UPLOAD = 300 * 1024 * 1024          # 300 MB por PDF enviado
 MAX_MODELOS = 20 * 1024 * 1024          # 20 MB de JSON (modelos / linhas do Excel)
@@ -39,8 +41,116 @@ MAX_SESSAO = 120 * 1024 * 1024          # 120 MB do trabalho em andamento (XMLs 
 # O servidor nunca entrega estes arquivos como estatico: documentos fiscais, modelos,
 # certificado e o proprio codigo.
 PROIBIDO = ("cache/", "cache\\", "modelos.json", "portal.json", "sessao.json", ".py", ".bak", ".pyc",
-            ".pfx", ".p12", ".key", ".env", ".git", "__pycache__")
+            ".pfx", ".p12", ".key", ".env", ".git", "__pycache__", "sessoes/", "sessoes\\",
+            "acesso.json", "servidor.log", ".bat", ".vbs")
 os.makedirs(CACHE, exist_ok=True)
+os.makedirs(SESSOES, exist_ok=True)
+
+
+# ------------------------------------------------------------------ acesso pela rede
+import hmac, secrets, ipaddress
+
+_tentativas = {}          # ip -> [instantes das tentativas erradas]
+
+
+def ler_acesso():
+    try:
+        with open(ACESSO, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        cfg = {}
+    if not cfg.get("segredo"):
+        cfg["segredo"] = secrets.token_hex(32)
+        cfg.setdefault("rede", False)
+        gravar_acesso(cfg)
+    return cfg
+
+
+def gravar_acesso(cfg):
+    tmp = ACESSO + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False)
+    os.replace(tmp, ACESSO)
+
+
+def hash_codigo(codigo, segredo):
+    return hashlib.pbkdf2_hmac("sha256", codigo.encode("utf-8"), segredo.encode("utf-8"), 120000).hex()
+
+
+def ficha(cfg):
+    """O que vai no cookie. Troca sozinho quando o codigo muda: quem entrou antes sai."""
+    return hmac.new(cfg["segredo"].encode(), (cfg.get("codigoHash") or "").encode(), "sha256").hexdigest()
+
+
+def ips_da_maquina():
+    ips = []
+    try:
+        import socket
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith("127.") and ip not in ips:
+                ips.append(ip)
+    except Exception:
+        pass
+    return ips
+
+
+def pagina_acesso(tipo):
+    """O que o outro computador ve antes de entrar."""
+    if tipo == "desligado":
+        corpo = """<h1>Acesso pela rede desligado</h1>
+        <p>O Confere NFS-e esta rodando, mas o acesso a partir de outros computadores esta desligado.</p>
+        <p class="nota">No computador onde o sistema esta instalado, abra o sistema e ligue
+        <b>Acesso pela rede</b>.</p>"""
+    else:
+        corpo = """<h1>Entrar no Confere NFS-e</h1>
+        <p>Digite o codigo de acesso do escritorio.</p>
+        <form id="f"><input id="c" type="password" autocomplete="current-password" autofocus placeholder="codigo de acesso">
+        <button type="submit">Entrar</button></form>
+        <p id="m" class="erro"></p>
+        <script>
+        document.getElementById('f').onsubmit = async e => {
+          e.preventDefault();
+          const m = document.getElementById('m'); m.textContent = '';
+          const r = await fetch('/api/acesso/entrar', { method: 'POST', body: JSON.stringify({ codigo: document.getElementById('c').value }) });
+          if (r.ok) { location.href = '/'; return; }
+          const j = await r.json().catch(() => ({}));
+          m.textContent = j.erro === 'codigo incorreto' ? 'Codigo incorreto.' : (j.erro || 'Nao consegui entrar.');
+        };
+        </script>"""
+    return """<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Confere NFS-e</title>
+<link rel="icon" href="/assets/favicon-sistema.png">
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F4F6F9;font-family:"Segoe UI",system-ui,sans-serif;color:#17202E}
+.cx{background:#fff;max-width:380px;width:calc(100% - 40px);border-radius:12px;box-shadow:0 20px 50px rgba(11,31,58,.18);overflow:hidden}
+.cab{background:linear-gradient(135deg,#0B1F3A,#1D4372);border-bottom:4px solid #C9A227;padding:18px 22px;display:flex;align-items:center;gap:12px}
+.cab img{height:34px}
+.corpo{padding:22px}
+h1{font-size:18px;margin:0 0 8px;color:#0B1F3A}
+p{margin:0 0 14px;font-size:14px;line-height:1.5}
+.nota{color:#63708A;font-size:13px}
+form{display:flex;gap:8px}
+input{flex:1;padding:10px 12px;border:1px solid #DDE3EC;border-radius:8px;font-size:15px}
+input:focus{outline:2px solid #C9A227;outline-offset:1px}
+button{background:#C9A227;color:#0B1F3A;border:0;border-radius:8px;padding:10px 16px;font-weight:650;font-size:14px;cursor:pointer}
+.erro{color:#B3261E;margin:10px 0 0;min-height:1.2em}
+</style></head><body><div class="cx">
+<div class="cab"><img src="/assets/logo-totali-claro.png" alt="Totali"></div>
+<div class="corpo">""" + corpo + """</div></div></body></html>"""
+
+
+def host_aceitavel(host):
+    """Recusa nome de dominio no Host. Um site malicioso pode apontar o proprio dominio
+    para 127.0.0.1 ou para este IP (DNS rebinding) e ler a conferencia como se fosse daqui."""
+    h = (host or "").rsplit(":", 1)[0].strip("[]").lower()
+    if h in ("localhost",):
+        return True
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private
 
 # ------------------------------------------------------------------ OCR
 _lock = threading.Lock()
@@ -515,7 +625,63 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             u = urllib.parse.urlparse(origem)
         except Exception:
             return False
-        return u.hostname in ("localhost", "127.0.0.1", "::1")
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]").lower()
+        return u.hostname in ("localhost", "127.0.0.1", "::1") or (bool(host) and u.hostname == host)
+
+    def local(self):
+        """Pedido feito neste proprio computador."""
+        ip = self.client_address[0]
+        return ip.startswith("127.") or ip == "::1"
+
+    def _cookie(self, nome):
+        for parte in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = parte.strip().partition("=")
+            if k == nome:
+                return v
+        return ""
+
+    def _html(self, status, corpo):
+        b = corpo.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+    def porteiro(self):
+        """Decide se o pedido passa. Deste computador, sempre. De outro da rede, so com o
+        acesso pela rede ligado e depois de digitar o codigo."""
+        if not host_aceitavel(self.headers.get("Host")):
+            self._json({"erro": "endereco nao aceito"}, 421)
+            return False
+        if self.local():
+            return True
+        caminho0 = urllib.parse.urlparse(self.path).path
+        if self.command == "GET" and caminho0 in ("/assets/logo-totali-claro.png", "/assets/favicon-sistema.png"):
+            return True           # so os dois logos que a pagina de entrada mostra
+        cfg = ler_acesso()
+        if not cfg.get("rede") or not cfg.get("codigoHash"):
+            self._html(403, pagina_acesso("desligado"))
+            return False
+        caminho = urllib.parse.urlparse(self.path).path
+        if caminho == "/api/acesso/entrar":
+            return True
+        if hmac.compare_digest(self._cookie("confere"), ficha(cfg)):
+            return True
+        if self.command == "GET" and caminho in ("/", "/index.html"):
+            self._html(200, pagina_acesso("entrar"))
+            return False
+        self._json({"erro": "entre com o codigo de acesso"}, 401)
+        return False
+
+    def id_sessao(self, q):
+        """Cada navegador tem a sua conferencia. O id vem da propria pagina."""
+        return re.sub(r"[^0-9a-z]", "", (q.get("id", [""])[0] or "").lower())[:40]
+
+    def arquivo_sessao(self, q):
+        i = self.id_sessao(q)
+        return os.path.join(SESSOES, i + ".json") if len(i) >= 8 else None
 
     def caminho_permitido(self, caminho):
         c = urllib.parse.unquote(caminho).lower().replace("\\", "/").lstrip("/")
@@ -552,7 +718,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
+        if not self.porteiro():
+            return
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
+        if u.path == "/api/acesso":
+            if not self.local():
+                return self._json({"erro": "so neste computador"}, 403)
+            cfg = ler_acesso()
+            porta = self.server.server_address[1]
+            return self._json({"rede": bool(cfg.get("rede")), "temCodigo": bool(cfg.get("codigoHash")),
+                               "enderecos": [f"http://{ip}:{porta}" for ip in ips_da_maquina()]})
         if u.path == "/api/ping":
             return self._json({"ok": True, "motores": motores_disponiveis(), "versao": 5, "sessao": os.path.exists(SESSAO), "modeloDominio": os.path.exists(MODELO_DOMINIO), "portal": os.path.exists(os.path.join(BASE, "portal_nacional.py"))})
         if u.path == "/api/portal/status":
@@ -598,12 +773,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if u.path == "/api/sessao":
             if not self.origem_valida():
                 return self._json({"erro": "origem nao autorizada"}, 403)
-            if os.path.exists(SESSAO):
-                try:
-                    with open(SESSAO, encoding="utf-8") as f:
-                        return self._json(json.load(f))
-                except Exception:
-                    pass
+            candidatos = [self.arquivo_sessao(q)]
+            if self.local():
+                candidatos.append(SESSAO)  # a conferencia que ja existia antes continua aqui
+            for a in candidatos:
+                if a and os.path.exists(a):
+                    try:
+                        with open(a, encoding="utf-8") as f:
+                            return self._json(json.load(f))
+                    except Exception:
+                        pass
             return self._json({"vazia": True})
         if u.path == "/api/ocr/cache":
             # devolve o OCR ja feito de um PDF, sem precisar enviar o arquivo de novo
@@ -636,6 +815,56 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._json({"erro": "acesso negado"}, 403)
         return super().do_GET()
 
+    def entrar(self):
+        ip = self.client_address[0]
+        agora = time.time()
+        erros = [t for t in _tentativas.get(ip, []) if agora - t < 300]
+        if len(erros) >= 5:
+            return self._json({"erro": "muitas tentativas erradas; espere 5 minutos"}, 429)
+        dados = self.ler_corpo(4096) or b"{}"
+        try:
+            codigo = str(json.loads(dados.decode("utf-8")).get("codigo", ""))
+        except Exception:
+            codigo = ""
+        cfg = ler_acesso()
+        if not cfg.get("codigoHash") or not hmac.compare_digest(hash_codigo(codigo, cfg["segredo"]), cfg["codigoHash"]):
+            erros.append(agora)
+            _tentativas[ip] = erros
+            time.sleep(0.6)
+            return self._json({"erro": "codigo incorreto"}, 401)
+        _tentativas.pop(ip, None)
+        b = json.dumps({"ok": True}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Set-Cookie", f"confere={ficha(cfg)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000")
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+    def configurar_acesso(self):
+        if not self.local():
+            return self._json({"erro": "so neste computador"}, 403)
+        dados = self.ler_corpo(4096) or b"{}"
+        try:
+            obj = json.loads(dados.decode("utf-8"))
+        except Exception:
+            return self._json({"erro": "json invalido"}, 400)
+        cfg = ler_acesso()
+        codigo = str(obj.get("codigo") or "")
+        if codigo:
+            if len(codigo) < 6:
+                return self._json({"erro": "o codigo precisa de pelo menos 6 caracteres"}, 400)
+            cfg["codigoHash"] = hash_codigo(codigo, cfg["segredo"])
+        if "rede" in obj:
+            if obj["rede"] and not cfg.get("codigoHash"):
+                return self._json({"erro": "defina um codigo antes de ligar o acesso pela rede"}, 400)
+            cfg["rede"] = bool(obj["rede"])
+        gravar_acesso(cfg)
+        porta = self.server.server_address[1]
+        return self._json({"rede": bool(cfg.get("rede")), "temCodigo": bool(cfg.get("codigoHash")),
+                           "enderecos": [f"http://{ip}:{porta}" for ip in ips_da_maquina()]})
+
     def handle_one_request(self):
         try:
             super().handle_one_request()
@@ -646,9 +875,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.close_connection = True
 
     def do_POST(self):
+        if not self.porteiro():
+            return
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
         if not self.origem_valida():
             return self._json({"erro": "origem nao autorizada"}, 403)
+        if u.path == "/api/acesso/entrar":
+            return self.entrar()
+        if u.path == "/api/acesso":
+            return self.configurar_acesso()
+        if u.path == "/api/portal/config" and not self.local():
+            # o certificado da empresa so se escolhe no computador onde ele esta
+            return self._json({"erro": "o certificado so pode ser trocado no computador onde ele esta instalado"}, 403)
         dados = self.ler_corpo(MAX_MODELOS if u.path == "/api/dominio" else MAX_UPLOAD)
         if dados is None:
             return self._json({"erro": "corpo ausente ou grande demais"}, 413)
@@ -713,20 +951,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return self._json({"erro": "rota desconhecida"}, 404)
 
     def do_DELETE(self):
-        u = urllib.parse.urlparse(self.path)
+        if not self.porteiro():
+            return
+        u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
         if not self.origem_valida():
             return self._json({"erro": "origem nao autorizada"}, 403)
         if u.path == "/api/sessao":
-            if os.path.exists(SESSAO):
-                try:
-                    os.remove(SESSAO)
-                except Exception:
-                    pass
+            alvos = [self.arquivo_sessao(q)]
+            if self.local():
+                alvos.append(SESSAO)      # a antiga nao pode ressuscitar depois de apagada
+            for a in alvos:
+                if a and os.path.exists(a):
+                    try:
+                        os.remove(a)
+                    except Exception:
+                        pass
             return self._json({"ok": True})
         return self._json({"erro": "rota desconhecida"}, 404)
 
     def do_PUT(self):
-        u = urllib.parse.urlparse(self.path)
+        if not self.porteiro():
+            return
+        u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
         if not self.origem_valida():
             return self._json({"erro": "origem nao autorizada"}, 403)
         dados = self.ler_corpo(MAX_SESSAO if u.path == "/api/sessao" else MAX_MODELOS)
@@ -739,10 +985,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._json({"erro": "json invalido"}, 400)
             if not isinstance(obj, dict):
                 return self._json({"erro": "formato inesperado"}, 400)
-            tmp = SESSAO + ".tmp"
+            destino = self.arquivo_sessao(q) or (SESSAO if self.local() else None)
+            if not destino:
+                return self._json({"erro": "identificador da sessao ausente"}, 400)
+            tmp = destino + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(obj, f, ensure_ascii=False)
-            os.replace(tmp, SESSAO)
+            os.replace(tmp, destino)
             return self._json({"ok": True, "bytes": len(dados)})
         if u.path == "/api/modelos":
             try:
@@ -783,7 +1032,9 @@ def main():
         if a.isdigit():
             porta = int(a); break
     try:
-        srv = http.server.ThreadingHTTPServer(("127.0.0.1", porta), Handler)
+        # Escuta na rede, mas quem decide quem entra e o porteiro: com o acesso pela rede
+        # desligado (o padrao), pedido de fora recebe 403 e nada mais.
+        srv = http.server.ThreadingHTTPServer(("0.0.0.0", porta), Handler)
     except OSError as e:
         print(f"Nao consegui abrir a porta {porta}: {e}")
         print("Ja existe um Confere NFS-e aberto? Feche a outra janela preta e tente de novo.")
@@ -791,7 +1042,7 @@ def main():
             input("Enter para fechar...")
         except (EOFError, RuntimeError):   # sem janela preta nao ha quem responda
             pass
-        return
+        sys.exit(3)
     print(f"Confere NFS-e rodando em http://localhost:{porta}  (motores OCR: {', '.join(motores_disponiveis()) or 'nenhum'})")
     if "--sem-navegador" not in args:
         threading.Timer(0.8, lambda: webbrowser.open(f"http://localhost:{porta}")).start()
