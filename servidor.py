@@ -34,6 +34,7 @@ MODELOS = os.path.join(BASE, "modelos.json")
 SESSAO = os.path.join(BASE, "sessao.json")            # a antiga, de antes de haver uma por computador
 SESSOES = os.path.join(BASE, "sessoes")                 # uma por navegador: dois computadores nao se atropelam
 ACESSO = os.path.join(BASE, "acesso.json")              # acesso pela rede: ligado ou nao, e o codigo
+PLANOS = os.path.join(BASE, "planos")                   # plano de contas e memoria de classificacao, por empresa
 PORTA_PADRAO = 8131
 MAX_UPLOAD = 300 * 1024 * 1024          # 300 MB por PDF enviado
 MAX_MODELOS = 20 * 1024 * 1024          # 20 MB de JSON (modelos / linhas do Excel)
@@ -42,9 +43,60 @@ MAX_SESSAO = 120 * 1024 * 1024          # 120 MB do trabalho em andamento (XMLs 
 # certificado e o proprio codigo.
 PROIBIDO = ("cache/", "cache\\", "modelos.json", "portal.json", "sessao.json", ".py", ".bak", ".pyc",
             ".pfx", ".p12", ".key", ".env", ".git", "__pycache__", "sessoes/", "sessoes\\",
-            "acesso.json", "servidor.log", ".bat", ".vbs")
+            "acesso.json", "servidor.log", ".bat", ".vbs", "planos/", "planos\\")
 os.makedirs(CACHE, exist_ok=True)
 os.makedirs(SESSOES, exist_ok=True)
+os.makedirs(PLANOS, exist_ok=True)
+
+
+# ------------------------------------------------------------------ classificacao contabil
+def _cl():
+    import classificacao
+    return classificacao
+
+
+def _arq_plano(cnpj):
+    return os.path.join(PLANOS, cnpj + ".json")
+
+
+def _arq_memoria(cnpj):
+    return os.path.join(PLANOS, cnpj + ".memoria.json")
+
+
+def _ler_json(caminho, padrao):
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return padrao
+
+
+def _gravar_json(caminho, obj):
+    tmp = caminho + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False)
+    os.replace(tmp, caminho)
+
+
+def situacao_plano(cnpj):
+    plano = _ler_json(_arq_plano(cnpj), None) if cnpj else None
+    mem = _ler_json(_arq_memoria(cnpj), {}) if cnpj else {}
+    if not plano:
+        return {"tem": False, "memoria": len(mem)}
+    org = _cl().organizar(plano)
+    return {"tem": True, "empresa": plano.get("empresa", ""), "cnpjPlano": plano.get("cnpj", ""),
+            "arquivo": plano.get("arquivo", ""), "quando": plano.get("quando", ""),
+            "contas": len(plano.get("contas", [])), "despesas": len(org["despesas"]),
+            "fornecedores": len(org["fornecedores"]), "tributos": len(org["tributos"]), "memoria": len(mem)}
+
+
+def _salvo_temporario(dados, nome):
+    import tempfile
+    ext = os.path.splitext(nome)[1].lower() or ".bin"
+    fd, caminho = tempfile.mkstemp(suffix=ext)
+    with os.fdopen(fd, "wb") as f:
+        f.write(dados)
+    return caminho
 
 
 # ------------------------------------------------------------------ acesso pela rede
@@ -721,6 +773,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not self.porteiro():
             return
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
+        if u.path == "/api/plano":
+            cnpj = re.sub(r"\D", "", q.get("empresa", [""])[0])[:14]
+            return self._json(situacao_plano(cnpj))
         if u.path == "/api/acesso":
             if not self.local():
                 return self._json({"erro": "so neste computador"}, 403)
@@ -842,6 +897,88 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b)
 
+    def classificacao(self, u, q):
+        cnpj = re.sub(r"\D", "", q.get("empresa", [""])[0])[:14]
+        if len(cnpj) not in (11, 14):
+            return self._json({"erro": "nao sei de qual empresa sao as notas (CNPJ do tomador ausente)"}, 400)
+        dados = self.ler_corpo(MAX_UPLOAD)
+        if dados is None:
+            return self._json({"erro": "arquivo ausente ou grande demais"}, 413)
+        cl = _cl()
+        nome = os.path.basename(urllib.parse.unquote(q.get("nome", ["arquivo"])[0]))[:180]
+        try:
+            if u.path == "/api/plano":
+                tmp = _salvo_temporario(dados, nome)
+                try:
+                    plano = cl.ler_plano(tmp)
+                finally:
+                    os.remove(tmp)
+                if len(plano.get("contas", [])) < 10:
+                    return self._json({"erro": "nao reconheci um plano de contas neste arquivo"}, 400)
+                plano["arquivo"] = nome
+                plano["quando"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+                org = cl.organizar(plano)
+                if not org["despesas"]:
+                    return self._json({"erro": "o plano nao tem contas de despesa (grupo 3)"}, 400)
+                aviso = ""
+                if plano.get("cnpj") and plano["cnpj"] != cnpj:
+                    aviso = (f"Este plano e da empresa {plano.get('empresa') or plano['cnpj']} "
+                             f"(CNPJ {plano['cnpj']}), mas as notas carregadas sao de outro CNPJ ({cnpj}).")
+                    if q.get("forcar", [""])[0] != "1":
+                        return self._json({"erro": aviso, "outraEmpresa": True}, 409)
+                _gravar_json(_arq_plano(cnpj), plano)
+                out = situacao_plano(cnpj)
+                out["aviso"] = aviso
+                return self._json(out)
+
+            plano = _ler_json(_arq_plano(cnpj), None)
+            if not plano:
+                return self._json({"erro": "importe primeiro o plano de contas desta empresa"}, 400)
+            org = cl.organizar(plano)
+
+            if u.path == "/api/classificacao/memoria":
+                tmp = _salvo_temporario(dados, nome)
+                try:
+                    nova = cl.ler_classificacao_anterior(tmp, org)
+                finally:
+                    os.remove(tmp)
+                if not nova:
+                    return self._json({"erro": "nao achei nesta planilha CNPJ de fornecedor e conta de debito do plano"}, 400)
+                antiga = _ler_json(_arq_memoria(cnpj), {})
+                _gravar_json(_arq_memoria(cnpj), cl.juntar_memoria(antiga, nova))
+                return self._json({"aprendidos": len(nova), "novos": len(set(nova) - set(antiga)),
+                                   "memoria": len(set(nova) | set(antiga))})
+
+            # /api/classificacao/excel
+            corpo = json.loads(dados.decode("utf-8"))
+            textos = [(str(a), str(b)) for a, b in corpo.get("xmls", []) if b]
+            notas = cl.notas_dos_xmls(textos)
+            if not notas:
+                return self._json({"erro": "nenhuma NFS-e nos XMLs carregados"}, 400)
+            mem = _ler_json(_arq_memoria(cnpj), {})
+            comp = corpo.get("competencia") or ""
+            if not comp:
+                from collections import Counter
+                m = Counter(n["competencia"][:7] for n in notas if n.get("competencia")).most_common(1)
+                comp = f"{m[0][0][5:7]}/{m[0][0][:4]}" if m else ""
+            wb, res = cl.gerar_excel(notas, org, plano.get("empresa") or corpo.get("empresaNome") or "", comp, mem)
+            buf = io.BytesIO()
+            wb.save(buf)
+            b = buf.getvalue()
+            from collections import Counter
+            resumo = dict(Counter(r["confianca"] for _, _, r in res))
+            resumo["notas"] = len(res)
+            resumo["semFornecedor"] = sum(1 for _, _, r in res if not r["credito"])
+            resumo["competencia"] = comp
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            self.send_header("X-Classificacao", urllib.parse.quote(json.dumps(resumo, ensure_ascii=False)))
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+        except Exception as e:  # noqa
+            return self._json({"erro": f"nao consegui processar: {e}"}, 500)
+
     def configurar_acesso(self):
         if not self.local():
             return self._json({"erro": "so neste computador"}, 403)
@@ -882,6 +1019,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._json({"erro": "origem nao autorizada"}, 403)
         if u.path == "/api/acesso/entrar":
             return self.entrar()
+        if u.path in ("/api/plano", "/api/classificacao/memoria", "/api/classificacao/excel"):
+            return self.classificacao(u, q)
         if u.path == "/api/acesso":
             return self.configurar_acesso()
         if u.path == "/api/portal/config" and not self.local():

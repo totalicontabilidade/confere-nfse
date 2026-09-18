@@ -46,3 +46,6 @@ sessoes/
 # log do servidor e aviso de parada
 servidor.log
 parar.sinal
+
+# plano de contas e memoria de classificacao de cada empresa
+planos/

@@ -382,6 +382,7 @@ tr.detalhe td{background:var(--surface2);padding:14px 18px 18px 22px}
   <button class="btn" id="btnImprimir">Imprimir</button>
   <button class="btn ouro" id="btnConfFinal">Conferência final</button>
   <button class="btn ouro" id="btnDominio">Excel do Domínio</button>
+  <button class="btn ouro" id="btnClassif" title="Conta de débito, fornecedor e retenções de cada nota, pelo plano de contas da empresa">Classificação contábil</button>
   <button class="btn principal" id="btnExcel">Baixar Excel</button>
 </div>
 
@@ -2666,6 +2667,110 @@ function confrontoPortal(j, novos, comp) {
     </div>` : ''}`;
 }
 $('#btnPortal').onclick = abrirPortalComEspera;
+
+// ---- classificação contábil: plano de contas da empresa + memória do que já foi conferido
+function empresaDasNotas() {
+  const c = {};
+  for (const n of estado.xml) {
+    const d = digitos(n.tomadorDoc || '');
+    if (d.length === 11 || d.length === 14) c[d] = (c[d] || 0) + 1;
+  }
+  const m = Object.entries(c).sort((a, b) => b[1] - a[1])[0];
+  const doc = m ? m[0] : '';
+  const nome = doc ? (estado.xml.find(n => digitos(n.tomadorDoc || '') === doc)?.tomadorNome || '') : '';
+  return { doc, nome };
+}
+function escolherArquivo(aceita) {
+  return new Promise(resolve => {
+    const i = document.createElement('input');
+    i.type = 'file'; i.accept = aceita;
+    i.onchange = () => resolve(i.files[0] || null);
+    i.click();
+  });
+}
+async function abrirClassificacao() {
+  if (!servidor.ok) return aviso('A classificação precisa do servidor local.');
+  const emp = empresaDasNotas();
+  if (!estado.xml.length) return aviso('Carregue os XMLs das notas primeiro.');
+  abrirGaveta('Classificação contábil', 'Conta de débito, fornecedor e retenções de cada nota, pelo plano de contas da empresa', '<div class="painel" style="border-left:0"><div class="instrucao">Lendo…</div></div>', true);
+  let st = {};
+  try { st = await (await fetch('/api/plano?empresa=' + emp.doc, { cache: 'no-store' })).json(); } catch (e) { }
+  const qtdNotas = estado.xml.filter(n => !n.erro).length;
+  $('#gavCorpo').innerHTML = `
+  <div class="painel" style="border-left:0">
+    <div class="instrucao">Para cada nota, o sistema escolhe a <b>conta de despesa</b> (débito), a <b>conta do fornecedor</b> (crédito) e as contas das <b>retenções</b>, pelo plano de contas da empresa. Quem decide com mais segurança é a memória: um fornecedor que você já conferiu vai para a mesma conta. Fornecedor novo recebe uma sugestão e fica para você conferir.</div>
+    <h3>Empresa</h3>
+    <div class="pn-escopo">${emp.doc ? `<span><b>${esc(emp.nome || 'Tomadora')}</b> · ${esc(fmtDoc(emp.doc))}</span><span>tirada dos ${qtdNotas} XMLs carregados</span>`
+                                     : '<span><b>Não identifiquei a empresa tomadora nos XMLs.</b></span>'}</div>
+    <h3>1. Plano de contas</h3>
+    <div class="cf-alerta ${st.tem ? 'ok' : ''}">
+      ${st.tem ? `<b>${esc(st.empresa || 'Plano carregado')}</b>
+                  <span>${st.contas} contas · ${st.despesas} de despesa · ${st.fornecedores} fornecedores · ${st.tributos} de impostos</span>
+                  <span class="doc">${esc(st.arquivo || '')} · importado em ${esc(st.quando || '')}</span>`
+               : `<b>Nenhum plano de contas para esta empresa</b><span>Use o relatório "Plano de Contas" do Domínio em PDF, ou uma planilha com código reduzido, classificação e nome.</span>`}
+    </div>
+    <div class="acoes"><button class="btn${st.tem ? '' : ' principal'}" id="clPlano">${st.tem ? 'Trocar o plano de contas' : 'Importar plano de contas'}</button><span class="doc" id="clPlanoMsg"></span></div>
+    <h3>2. Memória de fornecedores</h3>
+    <div class="cf-alerta ${st.memoria ? 'ok' : ''}">
+      <b>${st.memoria ? `${st.memoria} fornecedor(es) já conhecido(s)` : 'Nenhum fornecedor conhecido ainda'}</b>
+      <span>${st.memoria ? 'Esses vão direto para a conta de sempre, com confiança Alta.' : 'Opcional, mas é o que mais acerta: importe uma classificação já conferida (a planilha que este sistema gera, depois de revisada, ou uma sua de meses anteriores).'}</span>
+    </div>
+    <div class="acoes"><button class="btn" id="clMemoria"${st.tem ? '' : ' disabled'}>Ensinar com classificação conferida</button><span class="doc" id="clMemMsg"></span></div>
+    <h3>3. Gerar</h3>
+    <div class="acoes"><button class="btn principal" id="clGerar"${st.tem && emp.doc ? '' : ' disabled'}>Gerar Excel de classificação</button><span class="doc" id="clStatus"></span></div>
+    <div id="clResultado"></div>
+    <div class="regras-mini">Confiança <b>Alta</b> = fornecedor já conferido antes. <b>Média</b> = fornecedor novo, conta sugerida pela nota — confira. <b>Baixa</b> = a nota não diz o que é. <b>Excluir</b> = nota cancelada ou substituída. O Excel sai no mesmo padrão da planilha de classificação da Totali: notas, resumo por conta e retenções a recolher.</div>
+  </div>`;
+
+  const enviar = async (url, arquivo) => {
+    const r = await fetch(url + (url.includes('?') ? '&' : '?') + 'nome=' + encodeURIComponent(arquivo.name), { method: 'POST', body: arquivo });
+    return { r, j: await r.json().catch(() => ({})) };
+  };
+  $('#clPlano').onclick = async () => {
+    const f = await escolherArquivo('.pdf,.xlsx,.xlsm,.csv,.txt'); if (!f) return;
+    $('#clPlanoMsg').textContent = 'lendo o plano…';
+    let { r, j } = await enviar('/api/plano?empresa=' + emp.doc, f);
+    if (r.status === 409 && j.outraEmpresa) {
+      const ok = await perguntar({ titulo: 'Plano de outra empresa?', corpo: `<p style="margin:0">${esc(j.erro)}</p><p style="margin:0;color:var(--muted);font-size:13px">Usar um plano de outra empresa troca todas as contas. Só confirme se tiver certeza.</p>`, sim: 'Usar mesmo assim', nao: 'Cancelar' });
+      if (!ok) { $('#clPlanoMsg').textContent = ''; return; }
+      ({ r, j } = await enviar('/api/plano?forcar=1&empresa=' + emp.doc, f));
+    }
+    if (!r.ok) { $('#clPlanoMsg').textContent = j.erro || 'não consegui ler'; return; }
+    aviso(`Plano importado: ${j.contas} contas.`);
+    abrirClassificacao();
+  };
+  $('#clMemoria').onclick = async () => {
+    const f = await escolherArquivo('.xlsx,.xlsm'); if (!f) return;
+    $('#clMemMsg').textContent = 'aprendendo…';
+    const { r, j } = await enviar('/api/classificacao/memoria?empresa=' + emp.doc, f);
+    if (!r.ok) { $('#clMemMsg').textContent = j.erro || 'não consegui ler'; return; }
+    aviso(`${j.aprendidos} fornecedor(es) aprendido(s), ${j.novos} novo(s).`);
+    abrirClassificacao();
+  };
+  $('#clGerar').onclick = async () => {
+    $('#clGerar').disabled = true; $('#clStatus').textContent = 'classificando…';
+    try {
+      const r = await fetch('/api/classificacao/excel?empresa=' + emp.doc, {
+        method: 'POST', body: JSON.stringify({ xmls: estado.xmlTextos.map(x => [x.nome, x.texto]), empresaNome: emp.nome }) });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); $('#clStatus').textContent = j.erro || 'falhou'; return; }
+      const res = JSON.parse(decodeURIComponent(r.headers.get('X-Classificacao') || '%7B%7D'));
+      const blob = await r.blob();
+      const base = (st.empresa || emp.nome || 'Empresa').split(/\s+/)[0].replace(/[^\w-]/g, '').toUpperCase();
+      const comp = (res.competencia || '').replace('/', '-');
+      await baixar(`${base}_Classificacao_NFSe${comp ? '_' + comp : ''}.xlsx`, blob);
+      const linha = (k, cls) => res[k] ? `<span><span class="pto ${cls}" style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px"></span><b>${res[k]}</b> ${k}</span>` : '';
+      $('#clResultado').innerHTML = `<div class="cf-alerta ok" style="margin-top:8px">
+          <b>${res.notas} nota(s) classificada(s) — competência ${esc(res.competencia || '')}</b>
+          ${linha('Alta', 't-confere')}${linha('Média', 't-atencao')}${linha('Baixa', 't-divergente')}${linha('Excluir', 't-outro')}
+          ${res.semFornecedor ? `<span><b>${res.semFornecedor}</b> fornecedor(es) sem conta no plano — cadastrar no Domínio.</span>` : ''}
+          <span class="doc">Depois de revisar o Excel, use "Ensinar com classificação conferida" com ele: no mês que vem esses fornecedores já vêm certos.</span>
+        </div>`;
+      $('#clStatus').textContent = '';
+    } catch (e) { $('#clStatus').textContent = 'falhou: ' + e.message; }
+    finally { $('#clGerar').disabled = false; }
+  };
+}
+$('#btnClassif').onclick = abrirClassificacao;
 
 // ---- acesso pela rede do escritório. Só aparece no computador onde o sistema está.
 const nesteComputador = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname);
