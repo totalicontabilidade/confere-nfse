@@ -29,6 +29,25 @@ Também ficam guardados entre um uso e outro: o CNPJ e o papel da empresa, os ac
 
 Há duas cópias do trabalho: uma no servidor (`sessao.json`) e outra dentro do próprio navegador. Se o servidor estiver fora do ar, a do navegador segura o que der. Ao voltar, o sistema **pergunta** antes de retomar, mostrando de quando é e o que tem dentro — e só apaga se você escolher começar do zero.
 
+## Classificação contábil
+
+Botão **Classificação contábil**, ao lado de "Excel do Domínio". Para cada nota dos XMLs carregados, o sistema escolhe a **conta de despesa** (débito), a **conta do fornecedor** (crédito) e as contas das **retenções** (ISS, IRRF, PIS/COFINS/CSLL), e gera um Excel no padrão da Totali: as notas, o resumo por conta e as retenções a recolher.
+
+1. **Importe o plano de contas** da empresa — o relatório "Plano de Contas" do Domínio em PDF, ou uma planilha com código reduzido, classificação e nome. Fica guardado para aquela empresa.
+2. **(Recomendado) Ensine com uma classificação conferida** — a planilha que este sistema gera, depois de revisada, ou uma sua de meses anteriores.
+3. **Gerar Excel de classificação.**
+
+Como ler a coluna **Confiança**:
+
+- **Alta** — fornecedor que você já conferiu antes: vai para a mesma conta.
+- **Média** — fornecedor novo: a conta foi sugerida pelo que a nota diz. Confira.
+- **Baixa** — a nota não diz o que é o serviço. Confira com atenção.
+- **Excluir** — nota cancelada ou substituída por outra. Não lançar.
+
+**O ciclo que faz o sistema acertar cada vez mais:** gere o Excel, revise as linhas Média e Baixa, e use **Ensinar com classificação conferida** com a planilha revisada. No mês seguinte, esses fornecedores já vêm certos. Na prática, quase todo fornecedor usa sempre a mesma conta — do segundo mês em diante sobra pouco para conferir.
+
+A empresa é descoberta pelo CNPJ do tomador nos XMLs. Se você importar o plano de uma empresa com as notas de outra, o sistema avisa antes de aceitar.
+
 ## Usar de outro computador do escritório
 
 O sistema roda neste computador, mas outros da mesma rede podem usá-lo pelo navegador.
@@ -160,6 +179,8 @@ Para instalar em outra máquina: `python -m pip install -r requisitos.txt`.
 - `portal.json` — certificado e senha (criado quando você configura; não compartilhe).
 - `firebase-config.js` — endereço do banco do histórico de usos (fica só nesta máquina).
 - `acesso.json` — acesso pela rede ligado ou não, e o código (guardado cifrado).
+- `planos/` — o plano de contas e a memória de fornecedores de cada empresa.
+- `classificacao.py` — as regras da classificação contábil.
 - `sessoes/` — a conferência em andamento de cada computador.
 - `servidor.log` — o que o servidor registrou; útil se algo parar de funcionar.
 - `servidor-continuo.bat` e `iniciar-servidor.vbs` — mantêm o servidor no ar, sem janela.
