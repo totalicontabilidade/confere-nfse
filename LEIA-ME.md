@@ -29,6 +29,25 @@ Também ficam guardados entre um uso e outro: o CNPJ e o papel da empresa, os ac
 
 Há duas cópias do trabalho: uma no servidor (`sessao.json`) e outra dentro do próprio navegador. Se o servidor estiver fora do ar, a do navegador segura o que der. Ao voltar, o sistema **pergunta** antes de retomar, mostrando de quando é e o que tem dentro — e só apaga se você escolher começar do zero.
 
+## Usar de outro computador do escritório
+
+O sistema roda neste computador, mas outros da mesma rede podem usá-lo pelo navegador.
+
+1. Aqui, clique em **Acesso pela rede** (no alto, ao lado de Modelos).
+2. Defina um **código de acesso** (pelo menos 6 caracteres) e clique em **Ligar o acesso pela rede**.
+3. No outro computador, abra o navegador no endereço que o painel mostra — algo como `http://192.168.2.109:8131` — e digite o código.
+
+O que vale saber:
+
+- **Este computador precisa estar ligado.** A leitura dos PDFs, o Portal Nacional e o certificado ficam aqui.
+- **Quem entra pela rede usa tudo, inclusive o Portal com o certificado da empresa.** Por isso o código. Cinco erros seguidos bloqueiam aquele computador por 5 minutos.
+- **Trocar o certificado e mexer no acesso só daqui.**
+- **Trocar o código desconecta todo mundo** que já tinha entrado.
+- **Cada computador tem a sua conferência em andamento** — ninguém sobrescreve o trabalho do outro. A leitura dos PDFs e os modelos ensinados são compartilhados.
+- Se o endereço mudar (a rede pode trocar o IP da máquina), o painel sempre mostra o atual. Vale pedir para fixar o IP deste computador no roteador.
+
+O servidor roda escondido e **se reinicia sozinho** se cair. O que acontecer fica em `servidor.log`. Para encerrar de propósito, use **Parar Confere NFS-e**.
+
 ## Histórico de usos
 
 Cada trabalho concluído deixa um registro no Firebase da Totali: data, empresa, competência, quantos XMLs, quantos documentos no PDF e de que tipo, quantos conferiram, quantos divergiram, quantos ficaram pendentes e quantos foram importados.
@@ -140,6 +159,10 @@ Para instalar em outra máquina: `python -m pip install -r requisitos.txt`.
 - `portal_nacional.py` — consulta ao ADN com o certificado digital.
 - `portal.json` — certificado e senha (criado quando você configura; não compartilhe).
 - `firebase-config.js` — endereço do banco do histórico de usos (fica só nesta máquina).
+- `acesso.json` — acesso pela rede ligado ou não, e o código (guardado cifrado).
+- `sessoes/` — a conferência em andamento de cada computador.
+- `servidor.log` — o que o servidor registrou; útil se algo parar de funcionar.
+- `servidor-continuo.bat` e `iniciar-servidor.vbs` — mantêm o servidor no ar, sem janela.
 
 ## Segurança
 
