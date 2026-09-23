@@ -34,9 +34,37 @@ def ler_config():
         return {}
     try:
         with open(CONFIG, encoding="utf-8") as f:
-            return json.load(f)
+            return _migrar(json.load(f))
     except Exception:
         return {}
+
+
+def _migrar(cfg):
+    """Versoes antigas guardavam um NSU so, sem dizer de qual empresa. Passa para o formato
+    por empresa uma vez; depois disso nao ha mais nada solto."""
+    if "ultimoNSU" in cfg or "fimEsteira" in cfg:
+        doc = re.sub(r"\D", "", str(cfg.get("cnpj", "")))
+        if doc:
+            cfg.setdefault("empresas", {}).setdefault(doc, {
+                "ultimoNSU": cfg.get("ultimoNSU", 0), "fimEsteira": cfg.get("fimEsteira", 0)})
+        cfg.pop("ultimoNSU", None)
+        cfg.pop("fimEsteira", None)
+        gravar_config(cfg)
+    return cfg
+
+
+def _estado_empresa(cfg, cnpj=None):
+    """Cada empresa tem a sua esteira: o NSU de uma nao vale para a outra. Sem isto, trocar
+    de certificado faria a varredura comecar no meio da esteira da outra empresa."""
+    doc = re.sub(r"\D", "", str(cnpj if cnpj is not None else cfg.get("cnpj", "")))
+    todas = cfg.setdefault("empresas", {})
+    if doc not in todas:
+        # o que estava solto no arquivo era da empresa que estava configurada
+        if doc and doc == re.sub(r"\D", "", str(cfg.get("cnpj", ""))) and cfg.get("ultimoNSU"):
+            todas[doc] = {"ultimoNSU": cfg.get("ultimoNSU", 0), "fimEsteira": cfg.get("fimEsteira", 0)}
+        else:
+            todas[doc] = {"ultimoNSU": 0, "fimEsteira": 0}
+    return todas[doc]
 
 
 def gravar_config(cfg):
@@ -155,8 +183,8 @@ def situacao():
     return {
         "configurado": pronto, "origem": origem, "thumbprint": cfg.get("thumbprint", ""),
         "caminho": cfg.get("certificado", ""), "ambiente": cfg.get("ambiente", "producao"),
-        "cnpj": cfg.get("cnpj", ""), "ultimoNSU": cfg.get("ultimoNSU", 0),
-        "fimEsteira": cfg.get("fimEsteira", 0), "maxSegundos": 240,
+        "cnpj": cfg.get("cnpj", ""), "ultimoNSU": _estado_empresa(cfg).get("ultimoNSU", 0),
+        "fimEsteira": _estado_empresa(cfg).get("fimEsteira", 0), "maxSegundos": 240,
         "certificado": info, "certificados": listar_certificados(), "temCurl": _tem_curl(),
     }
 
@@ -312,8 +340,9 @@ def consultar_dfe(nsu_inicial=None, limite_lotes=400, progresso=None, competenci
     if not st["temCurl"]:
         return {"erro": "o curl do Windows (com Schannel) não foi encontrado nesta máquina", "xmls": []}
     base = AMBIENTES.get(cfg.get("ambiente", "producao"), AMBIENTES["producao"])
-    nsu = int(nsu_inicial if nsu_inicial is not None else cfg.get("ultimoNSU", 0))
     cnpj = re.sub(r"\D", "", cfg.get("cnpj", "") or "")
+    est = _estado_empresa(cfg, cnpj)
+    nsu = int(nsu_inicial if nsu_inicial is not None else est.get("ultimoNSU", 0))
     xmls, erro, fim, lidos = [], None, False, 0
     with _PemTemporario(cfg) as pem:
         for _ in range(limite_lotes):
@@ -380,9 +409,11 @@ def consultar_dfe(nsu_inicial=None, limite_lotes=400, progresso=None, competenci
     if fim:
         # ate onde a esteira chegou hoje. Na proxima varredura isto vira a regua
         # da barra de progresso: sem isso nao da para dizer quanto falta.
-        cfg["fimEsteira"] = nsu
+        est["fimEsteira"] = nsu
     if xmls or fim:
-        cfg["ultimoNSU"] = nsu
+        est["ultimoNSU"] = nsu
+        cfg.pop("ultimoNSU", None)      # nao fica mais solto: cada empresa tem o seu
+        cfg.pop("fimEsteira", None)
         gravar_config(cfg)
     return {"xmls": xmls, "ultimoNSU": nsu, "total": len(xmls), "lidos": lidos, "erro": erro,
             "fim": fim, "segundos": round(_t.time() - inicio, 1)}
@@ -393,7 +424,7 @@ def testar():
     st = situacao()
     if not st["configurado"]:
         return {"ok": False, "erro": st["certificado"].get("erro") or "certificado não escolhido", "situacao": st}
-    r = consultar_dfe(nsu_inicial=ler_config().get("ultimoNSU", 0), limite_lotes=1, max_segundos=60)
+    r = consultar_dfe(nsu_inicial=_estado_empresa(ler_config()).get("ultimoNSU", 0), limite_lotes=1, max_segundos=60)
     ok = not r.get("erro")
     return {"ok": ok, "erro": r.get("erro"), "certificado": st["certificado"], "encontrados": r.get("total", 0),
             "fim": r.get("fim"), "lidos": r.get("lidos", 0), "ambiente": st["ambiente"]}

@@ -2584,9 +2584,14 @@ function abrirPortal() {
   };
   $('#pnCertSel').onchange = async () => {
     const st = await guardar();
-    const c = st.certificado || {};
-    if (c.doc && !digitos($('#pnCnpj').value)) $('#pnCnpj').value = fmtDoc(c.doc);
-    aviso(c.nome ? `Certificado de ${c.nome} guardado.` : 'Certificado guardado.');
+    let c = st.certificado || {};
+    // trocar o certificado é trocar de empresa: o CNPJ a consultar acompanha
+    if (c.doc && digitos($('#pnCnpj').value) !== digitos(c.doc)) {
+      $('#pnCnpj').value = fmtDoc(c.doc);
+      st = await guardar();
+      c = st.certificado || c;
+    }
+    aviso(c.nome ? `Certificado de ${c.nome} guardado. Consultando o CNPJ ${fmtDoc(c.doc || '')}.` : 'Certificado guardado.');
     abrirPortal();
   };
   $('#pnSalvar').onclick = async () => { await guardar(); aviso('Certificado e ajustes guardados nesta máquina.'); abrirPortal(); };
@@ -2857,8 +2862,11 @@ async function abrirClassificacao() {
 $('#btnClassif').onclick = abrirClassificacao;
 
 // ---- acesso pela rede do escritório. Só aparece no computador onde o sistema está.
-const nesteComputador = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname);
-if (nesteComputador) $('#btnRede').hidden = false;
+// Quem decide é o servidor: ele reconhece tanto localhost quanto o endereço de rede
+// da própria máquina. Perguntar evita esconder o botão de quem está nela.
+(async () => {
+  try { if ((await fetch('/api/acesso', { cache: 'no-store' })).ok) $('#btnRede').hidden = false; } catch (e) { }
+})();
 async function abrirRede() {
   let st = null;
   try { st = await (await fetch('/api/acesso', { cache: 'no-store' })).json(); } catch (e) { }

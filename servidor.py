@@ -134,6 +134,9 @@ def ficha(cfg):
     return hmac.new(cfg["segredo"].encode(), (cfg.get("codigoHash") or "").encode(), "sha256").hexdigest()
 
 
+_ips_cache = {"quando": 0, "ips": []}
+
+
 def ips_da_maquina():
     ips = []
     try:
@@ -681,9 +684,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return u.hostname in ("localhost", "127.0.0.1", "::1") or (bool(host) and u.hostname == host)
 
     def local(self):
-        """Pedido feito neste proprio computador."""
+        """Pedido feito neste proprio computador — inclusive quando a pessoa digita o
+        endereco de rede da propria maquina (http://192.168.x.x:8131) em vez de localhost."""
         ip = self.client_address[0]
-        return ip.startswith("127.") or ip == "::1"
+        if ip.startswith("127.") or ip == "::1":
+            return True
+        agora = time.time()
+        if agora - _ips_cache["quando"] > 60:
+            _ips_cache["ips"] = ips_da_maquina()
+            _ips_cache["quando"] = agora
+        return ip in _ips_cache["ips"]
 
     def _cookie(self, nome):
         for parte in (self.headers.get("Cookie") or "").split(";"):
