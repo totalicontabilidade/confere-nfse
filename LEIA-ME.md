@@ -142,6 +142,14 @@ A primeira varredura lê tudo o que existe na esteira desde o começo (na Play f
 
 **Limite importante:** o Portal Nacional só tem as notas do padrão nacional. Municípios com sistema próprio (é o caso de várias prefeituras) não aparecem ali.
 
+### Buscar todas as notas de um fornecedor
+
+No fim do painel do Portal, informe o **CNPJ ou CPF do fornecedor** e clique em **Buscar no portal**. O sistema percorre a esteira inteira e separa tudo que aquele fornecedor já emitiu para a empresa, **de qualquer competência**.
+
+O resultado vem numa lista com número, emissão, competência, valor, se a nota está cancelada e — o que interessa na conferência — **se ela já está na sua conferência ou não**. Um botão traz só as que faltam.
+
+Serve para responder perguntas como "esse fornecedor emitiu alguma nota que não chegou até nós?" ou "quanto essa empresa já nos cobrou?". Leva o mesmo tempo de uma varredura completa, porque o portal não tem busca.
+
 ## Modelos (o coletor)
 
 Cada prefeitura ou emissor tem um layout. Quando aparece um layout desconhecido, a nota recebe a etiqueta **modelo novo**.
