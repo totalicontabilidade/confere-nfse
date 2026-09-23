@@ -276,6 +276,11 @@ tr.detalhe td{background:var(--surface2);padding:14px 18px 18px 22px}
 .achado-item .v{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 .achado-item .o{font-size:11.5px;color:var(--muted);white-space:nowrap}
 .achado-item .o.ruim{color:var(--bad)}
+.forn-lista{max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px}
+.forn-lista table{min-width:0;width:100%}
+.forn-lista th{position:sticky;top:0;z-index:1}
+.forn-lista td,.forn-lista th{padding:6px 9px;font-size:12.5px;white-space:nowrap}
+.forn-lista td.tem{color:var(--ok)} .forn-lista td.falta{color:var(--bad);font-weight:600}
 .achado-canc{background:var(--bad-bg);border-left-color:var(--bad)}
 .achado-canc h3{color:var(--bad)} .achado-canc h3 .qt{background:var(--bad);color:#fff}
 .pn-escopo{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--muted);background:var(--surface2);border-radius:7px;padding:9px 11px;font-family:var(--sans);text-transform:none;letter-spacing:0;line-height:1.5}
@@ -2467,6 +2472,17 @@ function abrirPortal() {
         <span class="doc" id="pnStatus"></span>
       </div>
       <div id="pnResultado"></div>
+      <h3>Buscar todas as notas de um fornecedor</h3>
+      <div class="form-dom">
+        <label style="grid-column:1/-1">CNPJ ou CPF do fornecedor
+          <input id="pnPrest" placeholder="00.000.000/0000-00" inputmode="numeric"></label>
+      </div>
+      <div class="acoes">
+        <button class="btn" id="pnBuscarPrest"${e.configurado ? '' : ' disabled'}>Buscar no portal</button>
+        <span class="doc" id="pnPrestStatus"></span>
+      </div>
+      <div id="pnPrestResultado"></div>
+      <div class="regras-mini">O portal não tem busca: para achar um fornecedor o sistema percorre a esteira inteira e separa o que é dele — leva o mesmo tempo de uma varredura completa. Vem <b>todo o histórico</b>, de qualquer competência, e nada entra na conferência até você mandar.</div>
       <div class="regras-mini">Uma varredura completa desde o começo lê alguns milhares de documentos e leva poucos minutos; depois disso o sistema continua de onde parou. Só entram notas do padrão nacional: municípios com sistema próprio não aparecem no portal.</div>
     </div>`, true);
   const pintarEscopo = () => {
@@ -2498,6 +2514,74 @@ function abrirPortal() {
     return portal.estado;
   };
   $('#pnModo').onchange = pintarModo;
+  $('#pnPrest').addEventListener('change', e => {
+    const d = digitos(e.target.value);
+    e.target.value = d.length === 14 || d.length === 11 ? fmtDoc(d) : e.target.value;
+  });
+  $('#pnBuscarPrest').onclick = async () => {
+    const doc = digitos($('#pnPrest').value);
+    if (doc.length !== 14 && doc.length !== 11) return aviso('Informe o CNPJ (14 dígitos) ou CPF (11) do fornecedor.');
+    await guardar();
+    $('#pnBuscarPrest').disabled = true;
+    $('#pnPrestStatus').textContent = 'percorrendo a esteira…';
+    $('#pnPrestResultado').innerHTML = '';
+    const pararAcomp = acompanharPortal('#pnPrestResultado');
+    try {
+      const r = await fetch('/api/portal/consultar', { method: 'POST', body: JSON.stringify({ nsu: 0, prestador: doc, papel: $('#pnPapel').value }) });
+      const j = await r.json();
+      pararAcomp();
+      $('#pnBuscarPrest').disabled = false; $('#pnPrestStatus').textContent = '';
+      if (j.erro && !j.total) { $('#pnPrestResultado').innerHTML = `<div class="cf-alerta"><b>Não consegui consultar</b><span>${esc(j.erro)}</span></div>`; return; }
+      const notas = [];
+      for (const item of (j.xmls || [])) {
+        try {
+          for (const n of extrairXml(item.xml, `Portal Nacional · NSU ${item.nsu}`)) {
+            if (n.evento || n.erro) continue;
+            n.doPortal = true; n.nsu = item.nsu; n._xml = item.xml;
+            notas.push(n);
+          }
+        } catch (e) { }
+      }
+      notas.sort((a, b) => String(b.dataEmissao || '').localeCompare(String(a.dataEmissao || '')));
+      const daConferencia = new Set(estado.xml.filter(x => x.chave).map(x => digitos(x.chave)));
+      const novas = notas.filter(n => !(n.chave && daConferencia.has(digitos(n.chave))));
+      const soma = arr => arr.reduce((t, n) => t + (Number(n.valorServicos) || 0), 0);
+      const nome = notas.find(n => n.prestadorNome)?.prestadorNome || '';
+      $('#pnPrestResultado').innerHTML = notas.length ? `
+        <div class="cf-alerta ${novas.length ? '' : 'ok'}" style="margin-top:8px">
+          <b>${notas.length} nota(s) de ${esc(nome || fmtDoc(doc))} no portal</b>
+          <span>${esc(fmtDoc(doc))} · ${j.lidos.toLocaleString('pt-BR')} documentos percorridos em ${j.segundos}s · total ${esc(fmtDinheiro(soma(notas)))}</span>
+          <span>${novas.length ? `<b>${novas.length}</b> não está(ão) na sua conferência (${esc(fmtDinheiro(soma(novas)))}).` : 'Todas já estão na sua conferência.'}</span>
+        </div>
+        <div class="forn-lista"><table><thead><tr><th>Nº</th><th>Emissão</th><th>Competência</th><th class="dir">Valor</th><th>Situação</th><th>Na conferência</th></tr></thead><tbody>
+        ${notas.map(n => {
+          const tem = n.chave && daConferencia.has(digitos(n.chave));
+          return `<tr><td class="num">${esc(n.numero || '?')}</td><td>${esc(fmtData(n.dataEmissao))}</td><td>${esc(n.competencia || '')}</td>
+            <td class="num dir">${presente(n.valorServicos) ? esc(fmtDinheiro(n.valorServicos)) : ''}</td>
+            <td>${n.cancelada ? '<span class="tag ruim">Cancelada</span>' : ''}</td>
+            <td class="${tem ? 'tem' : 'falta'}">${tem ? 'sim' : 'não'}</td></tr>`;
+        }).join('')}</tbody></table></div>
+        ${novas.length ? `<div class="acoes" style="margin-top:8px"><button class="btn" id="pnTrazer">Trazer as ${novas.length} que faltam para a conferência</button></div>` : ''}`
+        : `<div class="cf-alerta"><b>Nenhuma nota deste fornecedor no portal</b><span>${j.lidos.toLocaleString('pt-BR')} documentos percorridos. Ou ele nunca emitiu para a empresa, ou o município dele não usa o padrão nacional.</span></div>`;
+      const bt = $('#pnTrazer');
+      if (bt) bt.onclick = () => {
+        let n = 0;
+        for (const nota of novas) {
+          estado.xml.push(nota);
+          estado.xmlTextos.push({ nome: nota.arquivo, texto: nota._xml });
+          n++;
+        }
+        estado.arquivosXml.push({ nome: `Portal Nacional · ${nome || fmtDoc(doc)} (${n} notas)`, qtd: n, obs: 'busca por fornecedor' });
+        estado.achadoFechado = false;
+        renderListas(); recalcular(); agendarSalvarSessao();
+        aviso(`${n} nota(s) trazida(s) para a conferência.`);
+        bt.disabled = true; bt.textContent = 'já trazidas';
+      };
+    } catch (err) {
+      pararAcomp(); $('#pnBuscarPrest').disabled = false; $('#pnPrestStatus').textContent = '';
+      aviso('Falha: ' + err.message);
+    }
+  };
   $('#pnCertSel').onchange = async () => {
     const st = await guardar();
     const c = st.certificado || {};
@@ -2623,7 +2707,7 @@ function textoProgresso(p) {
       ${barra === null ? `<span class="doc">A barra azul mostra o tempo até a pausa automática de ${tempoCurto(p.maxSegundos || 240)}; se chegar lá, é só clicar de novo para continuar.</span>` : ''}
     </div>`;
 }
-function acompanharPortal() {
+function acompanharPortal(onde = '#pnResultado') {
   let parar = false;
   (async () => {
     while (!parar) {
@@ -2631,7 +2715,7 @@ function acompanharPortal() {
       if (parar) break;
       try {
         const p = await (await fetch('/api/portal/status', { cache: 'no-store' })).json();
-        if (!parar && p && p.ativo) $('#pnResultado').innerHTML = textoProgresso(p);
+        if (!parar && p && p.ativo && $(onde)) $(onde).innerHTML = textoProgresso(p);
       } catch (e) { }
     }
   })();

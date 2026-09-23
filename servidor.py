@@ -1072,7 +1072,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         res = portal_nacional.consultar_dfe(
                             corpo.get("nsu"), competencia=corpo.get("competencias") or corpo.get("competencia"),
                             papel=corpo.get("papel") or None, pistas=corpo.get("pistas") or None,
-                            progresso=prog)
+                            prestador=corpo.get("prestador") or None, progresso=prog)
                     finally:
                         PORTAL_PROG["ativo"] = False
                     return self._json(res)
