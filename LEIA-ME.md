@@ -67,6 +67,8 @@ O que vale saber:
 
 O servidor roda escondido e **se reinicia sozinho** se cair. O que acontecer fica em `servidor.log`. Para encerrar de propósito, use **Parar Confere NFS-e**.
 
+Quem sobe o servidor quando você entra no Windows é a tarefa agendada **Confere NFS-e (servidor)** (Agendador de Tarefas). Ela também confere todo dia às 7h — se o servidor estiver fora do ar, sobe de novo. Se algum dia o sistema não responder, abra o Agendador de Tarefas, clique nessa tarefa e mande **Executar**.
+
 ## Histórico de usos
 
 Cada trabalho concluído deixa um registro no Firebase da Totali: data, empresa, competência, quantos XMLs, quantos documentos no PDF e de que tipo, quantos conferiram, quantos divergiram, quantos ficaram pendentes e quantos foram importados.

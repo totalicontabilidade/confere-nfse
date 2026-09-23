@@ -8,6 +8,11 @@ if not exist "%PY%" set "PY=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
 if not exist "%PY%" set "PY=python"
 
 :rodar
+rem Se ja existe servidor escutando, nao ha o que fazer: sai quieto. Sem isto, um segundo
+rem laco (tarefa agendada + atalho, por exemplo) ficaria girando a toa, porque no Windows
+rem o >> mantem o log travado por quem ja esta rodando.
+netstat -an | findstr /c:":8131 " | findstr /i "LISTENING" >nul
+if not errorlevel 1 exit /b
 rem o log nao cresce para sempre
 if exist servidor.log for %%A in (servidor.log) do if %%~zA GTR 5000000 del servidor.log
 echo [%date% %time%] iniciando>> servidor.log
