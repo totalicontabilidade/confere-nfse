@@ -306,7 +306,10 @@ tr.detalhe td{background:var(--surface2);padding:14px 18px 18px 22px}
 /* ====================================================================
    Visual 2 — mais espaço, menos ruído. Fica antes da impressão para ela vencer.
    ==================================================================== */
-:root{ --bg:#F7F8FA; --line:#E4E8EF; --line-forte:#D5DBE5; --raio:10px }
+/* Paleta azul Totali: fundo azul-acinzentado, cartões brancos se destacam sobre ele */
+:root{ --bg:#E6ECF4; --surface2:#EEF2F8; --line:#DCE3EE; --line-forte:#C9D3E2; --raio:10px;
+       --thead:#E4EAF3; --linha-borda:#E8EDF4; --linha-hover:#E3ECF8;
+       --tinta-div:#FDF3F2; --tinta-aten:#FEF8EC; --cartao:#FFFFFF; --tabela:#FFFFFF }
 body{background:var(--bg)}
 .wrap{max-width:1360px;padding:28px 32px 72px}
 
@@ -363,7 +366,7 @@ body.com-dados .nota{display:none}
 /* ---- resumo: uma faixa de números clicáveis no lugar dos dois painéis altos */
 .resumo{margin-top:26px;display:flex;flex-direction:column;gap:12px}
 .resumo-conf{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:10px}
-.stat{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:13px 15px 12px;background:var(--surface);
+.stat{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:13px 15px 12px;background:var(--cartao);
   border:1px solid var(--line);border-radius:var(--raio);cursor:pointer;text-align:left;font-family:var(--sans);
   border-top:3px solid var(--neutral);transition:box-shadow .12s,transform .12s,background .12s}
 .stat:hover{box-shadow:var(--shadow);transform:translateY(-1px)}
@@ -393,17 +396,18 @@ body.com-dados .nota{display:none}
 
 /* ---- tabela: cabeçalho fixo, status em etiqueta, linhas que pedem atenção destacadas */
 .tabela-wrap{border-radius:12px;border-color:var(--line);box-shadow:0 1px 2px rgba(11,31,58,.04);max-height:calc(100vh - 150px);overflow:auto}
-.tabela-wrap thead th{position:sticky;top:0;z-index:2;background:#F3F5F8;padding:11px 10px;border-bottom:1px solid var(--line-forte);font-size:10.5px}
-td{padding:11px 10px;border-bottom:1px solid #EEF1F5}
+.tabela-wrap thead th{position:sticky;top:0;z-index:2;background:var(--thead);padding:11px 10px;border-bottom:1px solid var(--line-forte);font-size:10.5px}
+td{padding:11px 10px;border-bottom:1px solid var(--linha-borda)}
+.tabela-wrap{background:var(--tabela)}
 tr.linha td:first-child{padding-left:14px;box-shadow:inset 4px 0 0 var(--neutral)}
 tr.linha.l-confere td:first-child{box-shadow:inset 4px 0 0 var(--ok)}
 tr.linha.l-divergente td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
 tr.linha.l-atencao td:first-child{box-shadow:inset 4px 0 0 var(--warn)}
 tr.linha.l-sem-pdf td:first-child,tr.linha.l-sem-xml td:first-child{box-shadow:inset 4px 0 0 var(--info)}
-tr.linha.l-divergente td{background:#FFF8F7}
-tr.linha.l-atencao td{background:#FFFBF2}
-tr.linha:hover td{background:#EEF3FB}
-tr.linha.aberta td{background:#EEF3FB}
+tr.linha.l-divergente td{background:var(--tinta-div)}
+tr.linha.l-atencao td{background:var(--tinta-aten)}
+tr.linha:hover td{background:var(--linha-hover)}
+tr.linha.aberta td{background:var(--linha-hover)}
 .st{padding:4px 10px;border-radius:999px;font-size:12px;background:var(--neutral-bg);gap:6px}
 .st::before{width:7px;height:7px;border-radius:50%}
 .st.s-confere{background:var(--ok-bg)} .st.s-divergente{background:var(--bad-bg)} .st.s-atencao{background:var(--warn-bg)}
@@ -1081,9 +1085,11 @@ function extrairGenerico(L, tipo) {
     const apos = i => ordena(docs.filter(d => d.linha >= i))[0] || null;
     prest = iPrest >= 0 ? apos(iPrest) : null;
     toma = iToma >= 0 ? apos(iToma) : null;
-    if (prest && toma && prest === toma) { if (iToma < iPrest) toma = docs.find(d => d.linha >= iToma && d.linha < iPrest) || null; else prest = docs.find(d => d.linha >= iPrest && d.linha < iToma) || null; }
-    if (!prest) prest = ordena(docs.filter(d => d !== toma))[0] || null;
-    if (!toma) toma = ordena(docs.filter(d => d !== prest))[0] || null;
+    // mesmo CNPJ nos dois papéis: o número aparece mais de uma vez na página (cabeçalho e
+    // seção do prestador, por exemplo). Compara o CNPJ, não o objeto — senão passa batido.
+    if (prest && toma && prest.doc === toma.doc) { if (iToma < iPrest) toma = docs.find(d => d.linha >= iToma && d.linha < iPrest && d.doc !== prest.doc) || null; else prest = docs.find(d => d.linha >= iPrest && d.linha < iToma && d.doc !== toma.doc) || null; }
+    if (!prest) prest = ordena(docs.filter(d => d.doc !== toma?.doc))[0] || null;
+    if (!toma) toma = ordena(docs.filter(d => d.doc !== prest?.doc))[0] || null;
   }
   if (r.emitenteChave && (!prest || prest.doc !== r.emitenteChave)) {
     // o texto errou o CNPJ do emitente, a chave não: confia na chave
@@ -1092,6 +1098,9 @@ function extrairGenerico(L, tipo) {
     const alvo = { doc: r.emitenteChave, valido: true, linha: liC, pag: L[liC] ? L[liC].pag : L[0].pag, x: 0 };
     if (papelEmit === 'prestador') prest = alvo; else toma = alvo;
   }
+  // Ninguém emite nota para si mesmo: se sobrou o mesmo CNPJ nos dois papéis, o tomador foi
+  // mal lido. Melhor dizer "não li" do que acusar uma divergência que não existe.
+  if (prest && toma && prest.doc === toma.doc) toma = null;
   // Numa nota há vários CNPJs (prefeitura, prestador, tomador, banco). Se a escolha não
   // foi ancorada pelo CNPJ da empresa nem por um rótulo de seção, ela é um palpite.
   const validosNaPagina = docs.filter(x => x.valido).length;
@@ -1417,6 +1426,17 @@ function montarDoc(arq, pags) {
     }
     if (d.prestadorDoc && d.onde.prestadorDoc) d.onde.prestadorDoc.duvidoso = !docValido(d.prestadorDoc);
     if (d.tomadorDoc && d.onde.tomadorDoc) d.onde.tomadorDoc.duvidoso = !docValido(d.tomadorDoc);
+  }
+  // Ninguém emite nota para si mesmo. Se a leitura ou um modelo ensinado deixou o mesmo CNPJ
+  // nos dois papéis (a nota tem "CPF/CNPJ" nas duas seções e a regra pegou a primeira), um
+  // dos dois está errado — e não é divergência da nota, é leitura. Qual descartar: se o CNPJ
+  // repetido é o da empresa, o errado é a outra parte; senão, é o lado da empresa.
+  if (d.prestadorDoc && d.tomadorDoc && digitos(d.prestadorDoc) === digitos(d.tomadorDoc)) {
+    const emp = digitos(estado.config.cnpjEmpresa || '');
+    const souPrestador = estado.config.papel === 'prestador';
+    const errado = (emp && digitos(d.prestadorDoc) === emp) === souPrestador ? 'tomadorDoc' : 'prestadorDoc';
+    d[errado] = null;
+    d.onde[errado] = { ...(d.onde[errado] || {}), descartado: 'o mesmo CNPJ saiu como prestador e como tomador' };
   }
   const man = estado.manuais[chaveDoc(d)];
   if (man) for (const [k, v] of Object.entries(man)) { d[k] = v; d.onde[k] = { ...(d.onde[k] || {}), fonte: 'manual' }; }
