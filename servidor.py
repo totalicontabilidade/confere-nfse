@@ -1070,7 +1070,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     cfg_p = portal_nacional.ler_config()
                     PORTAL_PROG.update({
                         "ativo": True, "lidos": 0, "nsu": inicio_nsu, "nsuInicial": inicio_nsu,
-                        "alvo": int(cfg_p.get("fimEsteira") or 0), "inicio": time.time(), "segundos": 0,
+                        "alvo": int(portal_nacional._estado_empresa(cfg_p).get("fimEsteira") or 0), "inicio": time.time(), "segundos": 0,
                     })
 
                     def prog(lidos, nsu):
@@ -1082,7 +1082,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         res = portal_nacional.consultar_dfe(
                             corpo.get("nsu"), competencia=corpo.get("competencias") or corpo.get("competencia"),
                             papel=corpo.get("papel") or None, pistas=corpo.get("pistas") or None,
-                            prestador=corpo.get("prestador") or None, progresso=prog)
+                            prestador=corpo.get("prestador") or None, ano=corpo.get("ano") or None,
+                            progresso=prog)
                     finally:
                         PORTAL_PROG["ativo"] = False
                     return self._json(res)

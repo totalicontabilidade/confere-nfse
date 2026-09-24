@@ -307,8 +307,8 @@ tr.detalhe td{background:var(--surface2);padding:14px 18px 18px 22px}
    Visual 2 — mais espaço, menos ruído. Fica antes da impressão para ela vencer.
    ==================================================================== */
 /* Paleta azul Totali: fundo azul-acinzentado, cartões brancos se destacam sobre ele */
-:root{ --bg:#E6ECF4; --surface2:#EEF2F8; --line:#DCE3EE; --line-forte:#C9D3E2; --raio:10px;
-       --thead:#E4EAF3; --linha-borda:#E8EDF4; --linha-hover:#E3ECF8;
+:root{ --bg:#D8E3F3; --surface2:#E7EEF9; --line:#D0DBEC; --line-forte:#B9C9E0; --raio:10px;
+       --thead:#DCE6F5; --linha-borda:#E2E9F4; --linha-hover:#DAE6F8;
        --tinta-div:#FDF3F2; --tinta-aten:#FEF8EC; --cartao:#FFFFFF; --tabela:#FFFFFF }
 body{background:var(--bg)}
 .wrap{max-width:1360px;padding:28px 32px 72px}
@@ -2626,15 +2626,17 @@ function abrirPortal() {
       <div id="pnResultado"></div>
       <h3>Buscar todas as notas de um fornecedor</h3>
       <div class="form-dom">
-        <label style="grid-column:1/-1">CNPJ ou CPF do fornecedor
+        <label>CNPJ ou CPF do fornecedor
           <input id="pnPrest" placeholder="00.000.000/0000-00" inputmode="numeric"></label>
+        <label>Ano (competência)
+          <select id="pnPrestAno">${(() => { const a = new Date().getFullYear(); let o = ''; for (let y = a; y >= 2023; y--) o += `<option value="${y}">${y}</option>`; return o + '<option value="">Todos os anos</option>'; })()}</select></label>
       </div>
       <div class="acoes">
         <button class="btn" id="pnBuscarPrest"${e.configurado ? '' : ' disabled'}>Buscar no portal</button>
         <span class="doc" id="pnPrestStatus"></span>
       </div>
       <div id="pnPrestResultado"></div>
-      <div class="regras-mini">O portal não tem busca: para achar um fornecedor o sistema percorre a esteira inteira e separa o que é dele — leva o mesmo tempo de uma varredura completa. Vem <b>todo o histórico</b>, de qualquer competência, e nada entra na conferência até você mandar.</div>
+      <div class="regras-mini">O portal não tem busca: para achar um fornecedor o sistema percorre a esteira inteira e separa o que é dele — leva o mesmo tempo de uma varredura completa, qualquer que seja o ano. Vêm só as notas com <b>competência no ano escolhido</b> (ou todo o histórico, em "Todos os anos"), e nada entra na conferência até você mandar.</div>
       <div class="regras-mini">Uma varredura completa desde o começo lê alguns milhares de documentos e leva poucos minutos; depois disso o sistema continua de onde parou. Só entram notas do padrão nacional: municípios com sistema próprio não aparecem no portal.</div>
     </div>`, true);
   const pintarEscopo = () => {
@@ -2672,6 +2674,8 @@ function abrirPortal() {
   });
   $('#pnBuscarPrest').onclick = async () => {
     const doc = digitos($('#pnPrest').value);
+    const ano = $('#pnPrestAno').value;
+    const noAno = ano ? ` em ${ano}` : '';
     if (doc.length !== 14 && doc.length !== 11) return aviso('Informe o CNPJ (14 dígitos) ou CPF (11) do fornecedor.');
     await guardar();
     $('#pnBuscarPrest').disabled = true;
@@ -2679,7 +2683,7 @@ function abrirPortal() {
     $('#pnPrestResultado').innerHTML = '';
     const pararAcomp = acompanharPortal('#pnPrestResultado');
     try {
-      const r = await fetch('/api/portal/consultar', { method: 'POST', body: JSON.stringify({ nsu: 0, prestador: doc, papel: $('#pnPapel').value }) });
+      const r = await fetch('/api/portal/consultar', { method: 'POST', body: JSON.stringify({ nsu: 0, prestador: doc, ano: $('#pnPrestAno').value, papel: $('#pnPapel').value }) });
       const j = await r.json();
       pararAcomp();
       $('#pnBuscarPrest').disabled = false; $('#pnPrestStatus').textContent = '';
@@ -2701,7 +2705,7 @@ function abrirPortal() {
       const nome = notas.find(n => n.prestadorNome)?.prestadorNome || '';
       $('#pnPrestResultado').innerHTML = notas.length ? `
         <div class="cf-alerta ${novas.length ? '' : 'ok'}" style="margin-top:8px">
-          <b>${notas.length} nota(s) de ${esc(nome || fmtDoc(doc))} no portal</b>
+          <b>${notas.length} nota(s) de ${esc(nome || fmtDoc(doc))} no portal${noAno}</b>
           <span>${esc(fmtDoc(doc))} · ${j.lidos.toLocaleString('pt-BR')} documentos percorridos em ${j.segundos}s · total ${esc(fmtDinheiro(soma(notas)))}</span>
           <span>${novas.length ? `<b>${novas.length}</b> não está(ão) na sua conferência (${esc(fmtDinheiro(soma(novas)))}).` : 'Todas já estão na sua conferência.'}</span>
         </div>
@@ -2714,7 +2718,7 @@ function abrirPortal() {
             <td class="${tem ? 'tem' : 'falta'}">${tem ? 'sim' : 'não'}</td></tr>`;
         }).join('')}</tbody></table></div>
         ${novas.length ? `<div class="acoes" style="margin-top:8px"><button class="btn" id="pnTrazer">Trazer as ${novas.length} que faltam para a conferência</button></div>` : ''}`
-        : `<div class="cf-alerta"><b>Nenhuma nota deste fornecedor no portal</b><span>${j.lidos.toLocaleString('pt-BR')} documentos percorridos. Ou ele nunca emitiu para a empresa, ou o município dele não usa o padrão nacional.</span></div>`;
+        : `<div class="cf-alerta"><b>Nenhuma nota deste fornecedor no portal${noAno}</b><span>${j.lidos.toLocaleString('pt-BR')} documentos percorridos.${ano ? ' Tente "Todos os anos" para ver se ele emitiu em outro ano.' : ''} Ou ele nunca emitiu para a empresa, ou o município dele não usa o padrão nacional.</span></div>`;
       const bt = $('#pnTrazer');
       if (bt) bt.onclick = () => {
         let n = 0;

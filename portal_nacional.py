@@ -322,10 +322,11 @@ def _serve_de_pista(xml, pistas):
 
 
 def consultar_dfe(nsu_inicial=None, limite_lotes=400, progresso=None, competencia=None, pistas=None,
-                  papel=None, max_segundos=240, prestador=None):
+                  papel=None, max_segundos=240, prestador=None, ano=None):
     """Percorre a esteira do ADN a partir do NSU e devolve os XMLs.
     `competencia` = 'AAAA-MM' (ou lista) filtra o que volta; a esteira continua avancando.
     `prestador` = CNPJ/CPF: devolve so as notas desse emitente, de qualquer competencia.
+    `ano` = 'AAAA': junto com `prestador`, so as notas com competencia nesse ano.
     {'xmls': [...], 'ultimoNSU': n, 'total': n, 'lidos': n, 'erro': str|None, 'fim': bool}"""
     import time as _t
     inicio = _t.time()
@@ -333,6 +334,7 @@ def consultar_dfe(nsu_inicial=None, limite_lotes=400, progresso=None, competenci
     comps = [c for c in comps if c]
     pistas = [p for p in (pistas or []) if p.get("cnpj")]
     prest_alvo = re.sub(r"\D", "", str(prestador or ""))
+    ano_alvo = re.sub(r"\D", "", str(ano or ""))[:4]
     cfg = ler_config()
     st = situacao()
     if not st["configurado"]:
@@ -393,6 +395,8 @@ def consultar_dfe(nsu_inicial=None, limite_lotes=400, progresso=None, competenci
                 if prest_alvo:
                     # busca por fornecedor: a competencia nao entra, o que vale e quem emitiu
                     if _pista_do_xml(xml)[0] != prest_alvo:
+                        continue
+                    if ano_alvo and not comp.startswith(ano_alvo):
                         continue
                 elif comps and comp not in comps:
                     if not _serve_de_pista(xml, pistas):
