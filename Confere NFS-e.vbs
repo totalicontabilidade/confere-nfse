@@ -14,16 +14,25 @@ python = shell.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Programs\Python\Py
 If Not fso.FileExists(python) Then python = shell.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Programs\Python\Python311\pythonw.exe"
 If Not fso.FileExists(python) Then python = "pythonw.exe"
 
+' Responde o servidor? Atencao: com On Error Resume Next, um erro DENTRO da condicao
+' de um If faz o VBScript entrar no Then - por isso o status e lido numa linha propria.
+Function NoArAgora()
+    Dim h, st
+    st = 0
+    On Error Resume Next
+    Set h = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    h.setTimeouts 1500, 1500, 3000, 3000
+    h.open "GET", url & "/api/ping", False
+    h.send
+    If Err.Number = 0 Then st = h.status
+    If Err.Number <> 0 Then st = 0
+    Err.Clear
+    On Error GoTo 0
+    NoArAgora = (st = 200)
+End Function
+
 ' Ja esta rodando?
-noAr = False
-On Error Resume Next
-Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
-http.setTimeouts 2000, 2000, 3000, 3000
-http.open "GET", url & "/api/ping", False
-http.send
-If Err.Number = 0 And http.status = 200 Then noAr = True
-Err.Clear
-On Error GoTo 0
+noAr = NoArAgora()
 
 If Not noAr Then
     ' 0 = sem janela nenhuma; False = nao espera terminar
@@ -34,18 +43,7 @@ If Not noAr Then
     ' espera o servidor responder (ate ~40s)
     For i = 1 To 40
         WScript.Sleep 1000
-        On Error Resume Next
-        Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
-        http.setTimeouts 1500, 1500, 2000, 2000
-        http.open "GET", url & "/api/ping", False
-        http.send
-        If Err.Number = 0 And http.status = 200 Then
-            Err.Clear
-            On Error GoTo 0
-            Exit For
-        End If
-        Err.Clear
-        On Error GoTo 0
+        If NoArAgora() Then Exit For
     Next
 End If
 

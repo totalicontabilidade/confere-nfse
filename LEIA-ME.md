@@ -67,7 +67,7 @@ O que vale saber:
 
 O servidor roda escondido e **se reinicia sozinho** se cair. O que acontecer fica em `servidor.log`. Para encerrar de propósito, use **Parar Confere NFS-e**.
 
-Quem sobe o servidor quando você entra no Windows é a tarefa agendada **Confere NFS-e (servidor)** (Agendador de Tarefas). Ela também confere todo dia às 7h — se o servidor estiver fora do ar, sobe de novo. Se algum dia o sistema não responder, abra o Agendador de Tarefas, clique nessa tarefa e mande **Executar**.
+Quem sobe o servidor quando você entra no Windows é a tarefa agendada **Confere NFS-e (servidor)** (Agendador de Tarefas). Ela roda escondida (sem janela preta para fechar sem querer) e confere **a cada 5 minutos**: se o servidor estiver fora do ar, sobe de novo. Se algum dia o sistema não responder, espere uns minutos ou clique duas vezes no atalho **Confere NFS-e**, que também sobe o servidor.
 
 ## Histórico de usos
 
